@@ -1,0 +1,18 @@
+{
+  "//": "Hosting ONLY for the TMS + Parent Portal frontends (same dist, two entries).",
+  "//deploy": "Functions + Firestore rules live in ../cornerstone-clinic and deploy from there.",
+  "hosting": [
+    {
+      "target": "tms",
+      "public": "dist",
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "rewrites": [{ "source": "**", "destination": "/index.html" }]
+    },
+    {
+      "target": "portal",
+      "public": "dist",
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "rewrites": [{ "source": "**", "destination": "/portal.html" }]
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "projects": {
+    "default": "gen-lang-client-0142488280"
+  },
+  "targets": {
+    "gen-lang-client-0142488280": {
+      "hosting": {
+        "tms": ["cornerstone-tms"],
+        "portal": ["cornerstone-portal"]
+      }
+    }
+  }
+}
