@@ -22,6 +22,7 @@ export const NAV: NavItem[] = [
   { to: '/reports',   label: 'Reports',          icon: '📊', roles: ['admin', 'senior'] },
   { to: '/notifications', label: 'Notifications', icon: '🔔', roles: ['admin'] },
   { to: '/audit',     label: 'Audit Log',        icon: '🛡️', roles: ['admin'] },
+  { to: '/staff',     label: 'Staff & Access',   icon: '🔑', roles: ['admin'] },
   { to: '/settings',  label: 'Settings',         icon: '⚙️', roles: ['admin'] },
 ];
 

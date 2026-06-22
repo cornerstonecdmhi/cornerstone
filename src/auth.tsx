@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 
 export type Role = 'admin' | 'senior' | 'therapist' | 'parent';
@@ -18,6 +18,7 @@ export interface TmsUser {
 interface AuthState {
   user: TmsUser | null;
   loading: boolean;
+  pending: boolean; // signed in to the TMS but awaiting admin approval
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -57,18 +58,29 @@ function fakeUser(audience: Audience): TmsUser {
 export function AuthProvider({ children, audience = 'tms' }: { children: ReactNode; audience?: Audience }) {
   const [user, setUser] = useState<TmsUser | null>(FAKE ? fakeUser(audience) : null);
   const [loading, setLoading] = useState(!FAKE);
+  const [pending, setPending] = useState(false);
 
   useEffect(() => {
     if (FAKE) return;
     return onAuthStateChanged(auth, async (u) => {
-      if (!u) { setUser(null); setLoading(false); return; }
+      if (!u) { setUser(null); setPending(false); setLoading(false); return; }
       try {
         const resolved = audience === 'portal' ? await resolveParent(u) : await resolveStaff(u);
-        if (resolved) { setUser(resolved); }
-        else { await signOut(auth); setUser(null); } // signed in but not a member of THIS surface
+        if (resolved) { setUser(resolved); setPending(false); }
+        else if (audience === 'tms') {
+          // Signed in but not yet provisioned staff → record an access request and
+          // show the "pending approval" screen (an admin approves it in Staff & Access).
+          try {
+            await setDoc(doc(db, 'tms_access_requests', u.uid), {
+              uid: u.uid, email: u.email || '', name: u.displayName || '', requestedAt: Date.now(), status: 'pending',
+            }, { merge: true });
+          } catch { /* ignore */ }
+          setUser(null); setPending(true);
+        } else {
+          await signOut(auth); setUser(null); setPending(false); // parent surface: reject non-parents
+        }
       } catch {
-        // Transient read error — deny access this load, but don't force a logout.
-        setUser(null);
+        setUser(null); setPending(false); // transient read error — no access this load, no forced logout
       }
       setLoading(false);
     });
@@ -79,10 +91,10 @@ export function AuthProvider({ children, audience = 'tms' }: { children: ReactNo
   };
   const logout = async () => {
     await signOut(auth);
-    setUser(null);
+    setUser(null); setPending(false);
   };
 
-  return <Ctx.Provider value={{ user, loading, login, logout }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ user, loading, pending, login, logout }}>{children}</Ctx.Provider>;
 }
 
 /** Where each role lands after login. */

@@ -11,6 +11,8 @@ import Schedule from './pages/Schedule';
 import Leads from './pages/Leads';
 import Assessments from './pages/Assessments';
 import CarePlans from './pages/CarePlans';
+import StaffAccess from './pages/StaffAccess';
+import PendingApproval from './components/PendingApproval';
 import Attendance from './pages/Attendance';
 import Goals from './pages/Goals';
 import Reports from './pages/Reports';
@@ -31,6 +33,9 @@ function page(node: React.ReactNode, allow?: Parameters<typeof Protected>[0]['al
 }
 
 export default function App() {
+  const { pending } = useAuth();
+  // Signed in but not yet approved as staff → hold at the pending screen.
+  if (pending) return <PendingApproval />;
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
@@ -46,6 +51,7 @@ export default function App() {
       <Route path="/therapists" element={page(<Therapists />, ['admin', 'senior'])} />
       <Route path="/assessments" element={page(<Assessments />, ['admin', 'senior'])} />
       <Route path="/care-plans" element={page(<CarePlans />, ['admin', 'senior'])} />
+      <Route path="/staff" element={page(<StaffAccess />, ['admin'])} />
       <Route path="/attendance" element={page(<Attendance />, ['admin', 'senior'])} />
       <Route path="/goals"      element={page(<Goals />, ['admin', 'senior', 'therapist'])} />
       <Route path="/billing"    element={page(<Billing />, ['admin'])} />

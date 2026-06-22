@@ -393,6 +393,26 @@ export const CAREPLAN_STATUS = ['Proposed', 'Agreed', 'Active', 'Completed', 'Ca
 export const PLAN_TYPES = ['Monthly', 'Quarterly', 'Yearly', 'Per-session', 'Combo (multi-therapy)'];
 export const AUTISM_SCREEN = ['Low risk', 'Moderate risk', 'High risk', 'Not screened'];
 
+// ── Staff & access approval ──────────────────────────────────────────────────
+// A new person who signs into the TMS but isn't yet provisioned creates an access
+// request (pending). An admin approves it (→ a tms_staff record) or denies it.
+export interface StaffMember {
+  id?: string;          // == Firebase Auth uid
+  name: string;
+  email?: string;
+  role: 'admin' | 'senior' | 'therapist';
+  active: boolean;
+}
+export interface AccessRequest {
+  id?: string;          // == Firebase Auth uid
+  uid: string;
+  email: string;
+  name?: string;
+  requestedAt: number;
+  status: 'pending' | 'approved' | 'denied';
+}
+export const STAFF_ROLES = ['admin', 'senior', 'therapist'] as const;
+
 export interface AuditEntry {
   id?: string;
   action: string;

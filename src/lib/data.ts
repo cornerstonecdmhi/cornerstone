@@ -5,7 +5,8 @@ import { db, DEMO, callSaveInvoice, callDeleteInvoice, callSendNotification } fr
 import {
   type ClinicSettings, type Service, type Package, type Holiday, type WorkHour,
   type Client, type Child, type Therapist, type Appointment, type AttendanceRecord, type ChildPackage,
-  type Goal, type AppNotification, type AuditEntry, type Assessment, type CarePlan, type Lead, type WebSubmission, DEFAULT_SETTINGS,
+  type Goal, type AppNotification, type AuditEntry, type Assessment, type CarePlan, type Lead, type WebSubmission,
+  type StaffMember, type AccessRequest, DEFAULT_SETTINGS,
 } from './types';
 import { type InvoiceDoc, compute, fyLabel } from './invoice';
 import * as demo from './demo';
@@ -237,6 +238,20 @@ export async function listCarePlansForChild(childId: string): Promise<CarePlan[]
   if (DEMO) return (demo.list('tms_care_plans') as CarePlan[]).filter((x) => x.childId === childId);
   const snap = await getDocs(query(collection(db, 'tms_care_plans'), where('childId', '==', childId)));
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as CarePlan[];
+}
+
+// ── Staff & access approval ──────────────────────────────────────────────────
+export const listStaff = () => listCol<StaffMember>('tms_staff', 'name');
+export const saveStaff = (s: StaffMember) => saveDocIn('tms_staff', s);
+export const deleteStaff = (id: string) => removeDoc('tms_staff', id);
+export const listAccessRequests = () => listCol<AccessRequest>('tms_access_requests');
+/** Approve a pending request → create the staff record + mark the request approved. */
+export async function approveAccess(req: AccessRequest, role: StaffMember['role']): Promise<void> {
+  await saveDocIn('tms_staff', { id: req.uid, name: req.name || req.email, email: req.email, role, active: true });
+  await saveDocIn('tms_access_requests', { ...req, id: req.id || req.uid, status: 'approved' });
+}
+export async function denyAccess(req: AccessRequest): Promise<void> {
+  await saveDocIn('tms_access_requests', { ...req, id: req.id || req.uid, status: 'denied' });
 }
 
 // ── Goals (clinical) ─────────────────────────────────────────────────────────
