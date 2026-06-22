@@ -44,6 +44,14 @@ export default function ParentPortal() {
   const todayStr = new Date().toISOString().slice(0, 10);
   const upcoming = appts.filter((a) => a.date >= todayStr && a.status === 'Scheduled');
 
+  // Parent-facing notices (derived from what they can already see).
+  const notices: { icon: string; text: string }[] = [];
+  const nextSession = upcoming[0];
+  if (nextSession) notices.push({ icon: '📅', text: `Next session: ${dmy(nextSession.date)} at ${nextSession.time} with ${nextSession.therapistName}` });
+  const dueInv = childInvoices.find((i) => { const tt = i.total ?? compute(i).total; const paid = i.amountPaid ?? (+i.paid || 0); return i.docType === 'Invoice' && paid < tt - 0.5; });
+  if (dueInv) { const tt = dueInv.total ?? compute(dueInv).total; const paid = dueInv.amountPaid ?? (+dueInv.paid || 0); notices.push({ icon: '💳', text: `Payment due: ₹${Math.round(tt - paid)}${dueInv.number ? ` (${dueInv.number})` : ''}` }); }
+  if (assessments.length) notices.push({ icon: '📄', text: `${assessments.length} assessment report${assessments.length === 1 ? '' : 's'} available to view below` });
+
   return (
     <div className="portal">
       <header className="portal-head">
@@ -62,6 +70,15 @@ export default function ParentPortal() {
       <div className="portal-body">
         <h1>Hello{user?.name ? ', ' + user.name.split(' ')[0] : ''} 👋</h1>
         {child && <p className="muted">Here's how <b>{child.name}</b> is doing.</p>}
+
+        {notices.length > 0 && (
+          <div className="card portal-notices">
+            <h3>Notices</h3>
+            {notices.map((n, i) => (
+              <div key={i} className="notice-row"><span className="notice-ic">{n.icon}</span><span>{n.text}</span></div>
+            ))}
+          </div>
+        )}
 
         {plan && (
           <div className="card">

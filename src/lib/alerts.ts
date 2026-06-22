@@ -2,9 +2,12 @@
 // live data (leads, bookings, packages, children, consent) rather than stored — so
 // acting on the item (e.g. confirming a booking) resolves the underlying condition
 // and the alert disappears on its own. No stale "unread" state to manage.
-import type { Lead, Child, ChildPackage, Client, Appointment } from './types';
+import type { Lead, Child, ChildPackage, Client, Appointment, Therapist } from './types';
+import { type InvoiceDoc, compute } from './invoice';
 
-export type AlertKind = 'lead' | 'booking' | 'credits' | 'review' | 'consent' | 'assessment';
+export type AlertKind =
+  | 'lead' | 'booking' | 'credits' | 'review' | 'consent' | 'assessment'
+  | 'invoice' | 'noshow' | 'leave';
 export type AlertSeverity = 'urgent' | 'warn' | 'info';
 
 export interface Alert {
@@ -18,10 +21,12 @@ export interface Alert {
 
 export interface AlertSources {
   leads: Lead[];
-  appts: Appointment[]; // today's (for website-requested bookings)
+  appts: Appointment[]; // today's (for bookings / no-shows / leave cover)
   children: Child[];
   packages: ChildPackage[];
   clients: Client[];
+  invoices?: InvoiceDoc[];   // admin-only — unpaid / overdue
+  therapists?: Therapist[];  // on-leave-with-sessions
 }
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -71,6 +76,37 @@ export function deriveAlerts(s: AlertSources): Alert[] {
       out.push({ id: 'con-' + cl.id, kind: 'consent', severity: 'info', title: `Consent pending: ${cl.name}`, detail: 'DPDP parental consent not recorded', to: '/clients' });
     }
   }
+  // Unpaid / overdue invoices
+  for (const i of s.invoices || []) {
+    if (i.docType !== 'Invoice') continue;
+    const total = i.total ?? compute(i).total;
+    const paid = i.amountPaid ?? (+i.paid || 0);
+    if (paid < total - 0.5) {
+      const overdue = !!(i.due && i.due < t);
+      out.push({
+        id: 'inv-' + i.id, kind: 'invoice', severity: overdue ? 'urgent' : 'info',
+        title: `${overdue ? 'Overdue' : 'Unpaid'} invoice: ${i.billTo?.name || i.child || ''}`,
+        detail: `${i.number || ''} · ₹${Math.round(total - paid)} due`, to: '/billing',
+      });
+    }
+  }
+  // Today's no-shows
+  for (const a of s.appts || []) {
+    if (a.status === 'No-show') {
+      out.push({ id: 'ns-' + a.id, kind: 'noshow', severity: 'warn', title: `No-show: ${a.childName}`, detail: `${a.serviceName} · ${a.time}`, to: '/schedule' });
+    }
+  }
+  // Therapist on leave who still has sessions booked today
+  for (const th of s.therapists || []) {
+    const onLeave = th.status === 'On Leave'
+      || (!!th.leaveFrom && !!th.leaveTo && th.leaveFrom <= t && t <= th.leaveTo)
+      || (!!th.leaveFrom && th.leaveFrom === t);
+    if (!onLeave) continue;
+    const n = (s.appts || []).filter((a) => a.therapistId === th.id && a.status !== 'Cancelled').length;
+    if (n > 0) {
+      out.push({ id: 'lv-' + th.id, kind: 'leave', severity: 'urgent', title: `${th.name} on leave — ${n} session${n === 1 ? '' : 's'} to cover`, detail: 'Reschedule or reassign today', to: '/schedule' });
+    }
+  }
 
   const rank: Record<AlertSeverity, number> = { urgent: 0, warn: 1, info: 2 };
   return out.sort((a, b) => rank[a.severity] - rank[b.severity]);
@@ -79,8 +115,8 @@ export function deriveAlerts(s: AlertSources): Alert[] {
 // Only surface alerts a given role can actually act on (matches route access).
 const ROLE_KINDS: Record<string, AlertKind[] | 'all'> = {
   admin: 'all',
-  senior: ['booking', 'review', 'assessment', 'consent'],
-  therapist: ['review', 'assessment'],
+  senior: ['booking', 'review', 'assessment', 'consent', 'noshow', 'leave'],
+  therapist: ['review', 'assessment', 'noshow'],
   parent: [],
 };
 export function alertsForRole(alerts: Alert[], role: string): Alert[] {

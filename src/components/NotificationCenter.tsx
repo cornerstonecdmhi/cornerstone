@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
-import { listLeads, listChildren, listChildPackages, listClients, listAppointments } from '../lib/data';
+import { listLeads, listChildren, listChildPackages, listClients, listAppointments, listInvoices, listTherapists } from '../lib/data';
 import { deriveAlerts, alertsForRole, type Alert } from '../lib/alerts';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -17,14 +17,17 @@ export default function NotificationCenter() {
 
   const load = async () => {
     try {
-      const [leads, children, packages, clients, appts] = await Promise.all([
+      const isAdmin = user?.role === 'admin';
+      const [leads, children, packages, clients, appts, invoices, therapists] = await Promise.all([
         listLeads().catch(() => []),
         listChildren().catch(() => []),
         listChildPackages().catch(() => []),
         listClients().catch(() => []),
         listAppointments(today()).catch(() => []),
+        (isAdmin ? listInvoices() : Promise.resolve([])).catch(() => []), // invoices are admin-only
+        listTherapists().catch(() => []),
       ]);
-      const all = deriveAlerts({ leads, children, packages, clients, appts });
+      const all = deriveAlerts({ leads, children, packages, clients, appts, invoices, therapists });
       setAlerts(user ? alertsForRole(all, user.role) : []);
     } catch { setAlerts([]); }
   };
