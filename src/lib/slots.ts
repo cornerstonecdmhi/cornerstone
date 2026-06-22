@@ -1,4 +1,4 @@
-import type { Therapist, WorkHour, Holiday, Appointment } from './types';
+import type { Therapist, WorkHour, Holiday } from './types';
 
 export const toMin = (hhmm: string): number => {
   const m = /^(\d{1,2}):(\d{2})/.exec(hhmm || '');
@@ -77,11 +77,4 @@ export function generateSlots(a: SlotArgs): string[] {
     if (!busy.some((iv) => t < iv.e && e > iv.s)) slots.push(toHHMM(t));
   }
   return slots;
-}
-
-/** Capacity/occupancy for a therapist on a date: booked vs max. */
-export function occupancy(t: Therapist, existing: Appointment[]): { booked: number; max: number; pct: number } {
-  const max = t.maxSessionsPerDay || 0;
-  const booked = existing.length;
-  return { booked, max, pct: max ? Math.round((booked / max) * 100) : 0 };
 }

@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth, type Role } from '../auth';
 import { DEMO } from '../firebase';
+import NotificationCenter from './NotificationCenter';
 
 interface NavItem { to: string; label: string; icon: string; roles: Role[]; }
 
@@ -51,6 +52,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <header className="topbar">
           <div>{DEMO && <span className="demo-badge">● Demo data — sample records (not your real data)</span>}</div>
           <div className="user-box">
+            <NotificationCenter />
             <div className="user-meta">
               <div className="user-name">{user?.name}</div>
               <div className="user-role">{user?.role}</div>
