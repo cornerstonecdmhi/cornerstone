@@ -289,4 +289,16 @@ table.items .desc .period{display:block;font-size:11px;color:var(--muted);margin
   .app-shell{grid-template-columns:64px 1fr}
   .brand-name,.brand-sub,.nav-link span:last-child{display:none}
   .nav-link{justify-content:center}
+  .content{padding:16px}
+  /* Wide data tables scroll horizontally within their card instead of overflowing. */
+  table.grid{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+  .notif-panel{width:min(340px,calc(100vw - 84px))}
+}
+@media(max-width:480px){
+  .content{padding:12px}
+  .card{padding:13px}
+  .page-head h1{font-size:20px}
+  .billing-grid{gap:12px}
+  .portal-body{padding:14px}
+  .portal-head{padding:12px 14px}
 }
