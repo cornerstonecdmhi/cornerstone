@@ -7,6 +7,7 @@ export default function ParentLogin() {
   const nav = useNavigate();
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
+  const [showPw, setShowPw] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -33,7 +34,10 @@ export default function ParentLogin() {
         <label>Email</label>
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required />
         <label>Password</label>
-        <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" required />
+        <div className="pw-field">
+          <input type={showPw ? 'text' : 'password'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" required />
+          <button type="button" className="pw-toggle" onClick={() => setShowPw((s) => !s)} aria-label={showPw ? 'Hide password' : 'Show password'}>{showPw ? 'Hide' : 'Show'}</button>
+        </div>
         {err && <div className="login-err">{err}</div>}
         <button className="btn-primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
         <p className="login-hint">For parents of Cornerstone children. Contact the clinic for access. <br /><a href="/login" style={{ color: 'var(--teal)' }}>Staff login →</a></p>
