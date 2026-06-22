@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
-import { listLeads, listChildren, listChildPackages, listClients, listAppointments, listInvoices, listTherapists } from '../lib/data';
+import { listLeads, listChildren, listChildPackages, listClients, listAppointments, listInvoices, listTherapists, sendNotification } from '../lib/data';
 import { deriveAlerts, alertsForRole, type Alert } from '../lib/alerts';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -40,6 +40,15 @@ export default function NotificationCenter() {
   }, []);
 
   const go = (a: Alert) => { setOpen(false); nav(a.to); };
+  const [sent, setSent] = useState<Record<string, 'sending' | 'done' | 'fail'>>({});
+  const sendReminder = async (a: Alert) => {
+    if (!a.phone || !a.message) return;
+    setSent((s) => ({ ...s, [a.id]: 'sending' }));
+    try {
+      const r = await sendNotification({ channel: 'whatsapp', to: a.phone, name: a.title, recipientName: a.title, type: a.sendLabel === 'Remind' ? 'Payment reminder' : 'Acknowledgement', message: a.message });
+      setSent((s) => ({ ...s, [a.id]: r.status === 'Sent' ? 'done' : 'fail' }));
+    } catch { setSent((s) => ({ ...s, [a.id]: 'fail' })); }
+  };
   const count = alerts.length;
 
   return (
@@ -53,11 +62,19 @@ export default function NotificationCenter() {
           <div className="notif-head">Notifications{count > 0 && <span className="muted"> · {count}</span>}</div>
           {count === 0 && <div className="notif-empty">You're all caught up 🎉</div>}
           {alerts.map((a) => (
-            <button key={a.id} className="notif-item" onClick={() => go(a)}>
-              <span className={'notif-dot ' + a.severity} />
-              <span className="notif-text"><b>{a.title}</b><span className="notif-detail">{a.detail}</span></span>
-              <span className="notif-go">→</span>
-            </button>
+            <div key={a.id} className="notif-item">
+              <button className="notif-main" onClick={() => go(a)}>
+                <span className={'notif-dot ' + a.severity} />
+                <span className="notif-text"><b>{a.title}</b><span className="notif-detail">{a.detail}</span></span>
+              </button>
+              {a.phone && a.message && a.sendLabel ? (
+                <button className="notif-send" disabled={sent[a.id] === 'sending' || sent[a.id] === 'done'} onClick={() => sendReminder(a)}>
+                  {sent[a.id] === 'done' ? 'Sent ✓' : sent[a.id] === 'sending' ? '…' : sent[a.id] === 'fail' ? 'Retry' : a.sendLabel}
+                </button>
+              ) : (
+                <button className="notif-go" onClick={() => go(a)} aria-label="Open">→</button>
+              )}
+            </div>
           ))}
         </div>
       )}

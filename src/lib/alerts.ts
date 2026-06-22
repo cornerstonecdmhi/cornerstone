@@ -17,6 +17,10 @@ export interface Alert {
   title: string;
   detail: string;
   to: string; // route to act on it
+  // Optional inline action: send a WhatsApp directly from the notification.
+  phone?: string;
+  sendLabel?: string; // e.g. 'Ack', 'Remind'
+  message?: string;
 }
 
 export interface AlertSources {
@@ -42,6 +46,8 @@ export function deriveAlerts(s: AlertSources): Alert[] {
         id: 'lead-' + (l.id || l.phone), kind: 'lead', severity: ageMin > 30 ? 'urgent' : 'warn',
         title: `New lead: ${l.parentName || l.childName || 'enquiry'}`,
         detail: `${l.concern || l.service || 'Uncontacted'}${ageMin ? ` · ${ageMin}m ago` : ''}`, to: '/leads',
+        phone: l.phone, sendLabel: 'Ack',
+        message: `Hi ${l.parentName || 'there'}, thanks for reaching out to Cornerstone — our team will call you shortly to confirm your appointment with Rajkumar.`,
       });
     }
   }
@@ -83,10 +89,13 @@ export function deriveAlerts(s: AlertSources): Alert[] {
     const paid = i.amountPaid ?? (+i.paid || 0);
     if (paid < total - 0.5) {
       const overdue = !!(i.due && i.due < t);
+      const due = Math.round(total - paid);
       out.push({
         id: 'inv-' + i.id, kind: 'invoice', severity: overdue ? 'urgent' : 'info',
         title: `${overdue ? 'Overdue' : 'Unpaid'} invoice: ${i.billTo?.name || i.child || ''}`,
-        detail: `${i.number || ''} · ₹${Math.round(total - paid)} due`, to: '/billing',
+        detail: `${i.number || ''} · ₹${due} due`, to: '/billing',
+        phone: i.billTo?.phone, sendLabel: 'Remind',
+        message: `Gentle reminder from Cornerstone: ₹${due} is pending${i.child ? ` for ${i.child}'s sessions` : ''}${i.number ? ` (invoice ${i.number})` : ''}. Please share the payment screenshot once done. Thank you!`,
       });
     }
   }
