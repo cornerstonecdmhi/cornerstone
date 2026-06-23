@@ -14,6 +14,23 @@ Four surfaces, one Firebase backend, two hosts. Do the parts in order.
 
 ---
 
+## ✅ LIVE NOW (deployed 2026-06-23)
+The TMS + Parent Portal are **deployed and serving** on Firebase Hosting:
+- **TMS (staff):** https://cornerstone-tms.web.app
+- **Parent Portal:** https://cornerstonecdmhi-portal.web.app  ← note: site id is `cornerstonecdmhi-portal` (the plain `cornerstone-portal` id was globally reserved). `.firebaserc` is updated to match.
+- Firestore **rules are deployed** to the named DB (incl. the new invite/role model).
+- Each site serves its own app (verified): TMS `/` → staff app, Portal `/` → parent app.
+
+**3 things still need YOU (can't be done from the CLI here):**
+1. **Bootstrap the first TMS admin** (see PART 1 → "Provision staff" — without this, even the
+   owner hits "pending approval" on the TMS because there's no admin yet to approve anyone).
+2. **Point the custom subdomains** `tms.` / `portal.` at the two sites (PART 3 + PART 4 DNS).
+3. **Authorized domains:** Firebase Console → Authentication → Settings → **Authorized domains** →
+   add `cornerstone-tms.web.app`, `cornerstonecdmhi-portal.web.app`, and later `tms.`/`portal.`
+   custom domains. (Email/password sign-in works without this; add them to be safe + for future OAuth.)
+
+---
+
 ## What YOU need before starting
 - **Domain DNS access** for `cornerstonechilddevelopment.in` (your registrar login).
 - **Vercel account** (free is fine), connected to the `cornerstonecdmhi` GitHub.
@@ -41,14 +58,23 @@ firebase deploy --only functions
 onReferralNew, onNewsletterNew, onReviewApproved) and create v2 versions — **say yes**.
 v2 needs the **Cloud Run + Eventarc** APIs enabled (Firebase will prompt/enable them).
 
-**Provision staff** (Firebase Console → Firestore → select the `ai-studio-…` database):
-1. Console → Authentication → add each staff member (email + password). Copy each **UID**.
-2. Firestore (named DB) → collection `tms_staff` → doc **ID = that UID** →
-   `{ name: "Rajkumar", role: "admin", active: true }` (roles: admin | senior | therapist).
-   Tip: copy your current `admin_users` people in as `role:"admin"` first (no lockout), then demote.
+**Bootstrap the FIRST TMS admin** (one-time, in the Firebase Console — required because the
+invite/approval system needs at least one admin to exist before anyone can be approved/invited):
+1. Open https://cornerstone-tms.web.app and **sign in / create your account** with your email.
+   You'll see "pending approval" — that's expected; it also writes a `tms_access_requests/{uid}` doc.
+2. Console → Firestore → select the **`ai-studio-…`** database → collection **`tms_staff`** →
+   **Add document**, doc **ID = your Auth UID** → fields:
+   `{ name: "Rajkumar", email: "you@…", role: "admin", active: true }`.
+   (Find your UID in Console → Authentication → Users, or it's the id of the `tms_access_requests` doc just created.)
+3. Reload the TMS — you're now in as admin.
 
-**Parents** (later, as you onboard): `tms_parent_users/{uid}` → `{ name, clientId }` where
-`clientId` is their `tms_clients` doc id.
+**After that, NO more console work** — from inside the TMS, **Staff & Access**:
+- **Invite a teammate** (email + role) → they create their account → auto-provisioned with that role.
+- Or approve anyone who self-signed-in (they appear under "Pending access requests").
+- **Parent portal access** card → invite a parent (email + family) → they sign in at the portal,
+  auto-linked to only their child. (No more manual `tms_parent_users` docs.)
+
+Roles: **admin** = everything incl. financials/config; **senior/therapist** = clinical only.
 
 ---
 
@@ -67,24 +93,19 @@ v2 needs the **Cloud Run + Eventarc** APIs enabled (Firebase will prompt/enable 
 ---
 
 ## PART 3 — TMS + Portal on Firebase Hosting (the `cornerstone` repo)
-From the **cornerstone** repo folder:
+**✅ Already done** — sites created and deployed. The sites are `cornerstone-tms` and
+`cornerstonecdmhi-portal`. To **re-deploy after any code change**, from the `cornerstone` repo:
 ```bash
-cd cornerstone
-npm install
-npm run build            # produces dist/index.html (TMS) + dist/portal.html (portal)
-firebase login           # if not already
-firebase hosting:sites:create cornerstone-tms
-firebase hosting:sites:create cornerstone-portal
-# .firebaserc already maps target tms->cornerstone-tms, portal->cornerstone-portal.
-# If the created site IDs differ, run:
-#   firebase target:apply hosting tms <your-tms-site-id>
-#   firebase target:apply hosting portal <your-portal-site-id>
-firebase deploy --only hosting:tms,hosting:portal
+npm run build            # builds dist (TMS) + dist-portal (portal index = portal.html)
+firebase deploy --only hosting --project gen-lang-client-0142488280
 ```
-Open the two `*.web.app` URLs → confirm the TMS shows the staff login and the portal shows the
-parent login. Then **Console → Hosting →** each site → **Add custom domain**:
+> Why two dirs: Firebase serves a real `/index.html` *before* rewrites, so the portal site
+> needs its own `dist-portal` whose index.html IS the portal app (the build script handles this).
+
+**To attach the friendly subdomains:** Console → Hosting → each site → **Add custom domain**:
 - site `cornerstone-tms` → `tms.cornerstonechilddevelopment.in`
-- site `cornerstone-portal` → `portal.cornerstonechilddevelopment.in`
+- site `cornerstonecdmhi-portal` → `portal.cornerstonechilddevelopment.in`
+Firebase shows the DNS records to add (PART 4). Until then the apps are live at the `*.web.app` URLs above.
 
 ---
 

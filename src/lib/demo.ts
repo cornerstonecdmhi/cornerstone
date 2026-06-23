@@ -108,6 +108,12 @@ const store: Record<string, any[]> = {
   tms_access_requests: [
     { id: 'req1', uid: 'req1', email: 'priya.menon@cornerstonecdmhi.com', name: 'Priya Menon', requestedAt: Date.now() - 18e5, status: 'pending' },
   ],
+  tms_invites: [
+    { id: 'newtherapist@cornerstonecdmhi.com', email: 'newtherapist@cornerstonecdmhi.com', role: 'therapist', invitedBy: 'dev', createdAt: Date.now() - 6e5, status: 'invited' },
+  ],
+  tms_parent_invites: [
+    { id: 'parent.sharma@email.com', email: 'parent.sharma@email.com', clientId: 'cl1', name: 'Mr. Sharma', invitedBy: 'dev', createdAt: Date.now() - 5e5, status: 'invited' },
+  ],
   tms_clients: clients, tms_children: children, tms_therapists: therapists,
   tms_services: services, tms_packages: [], tms_holidays: [],
   tms_workhours: WEEK.map((w) => ({ id: w.key, day: w.day, open: w.key === 'sun' ? 'Closed' : '10:00', close: w.key === 'sun' ? 'Closed' : (w.key === 'sat' ? '16:00' : '18:00') })),

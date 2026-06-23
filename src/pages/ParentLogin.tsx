@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 
 export default function ParentLogin() {
-  const { login } = useAuth();
+  const { login, signup } = useAuth();
   const nav = useNavigate();
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -14,9 +15,21 @@ export default function ParentLogin() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr(''); setBusy(true);
-    try { await login(email.trim(), pw); nav('/portal'); }
-    catch (x: any) { setErr(x?.code === 'auth/invalid-credential' ? 'Incorrect email or password.' : (x?.message || 'Sign in failed.')); }
-    finally { setBusy(false); }
+    try {
+      if (mode === 'signup') await signup(email.trim(), pw);
+      else await login(email.trim(), pw);
+      nav('/portal');
+    } catch (x: any) {
+      const c = x?.code;
+      setErr(
+        c === 'auth/invalid-credential' ? 'Incorrect email or password.'
+          : c === 'auth/email-already-in-use' ? 'An account already exists for this email — sign in instead.'
+          : c === 'auth/weak-password' ? 'Choose a password of at least 6 characters.'
+          : (x?.message || 'Sign in failed.'),
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -29,18 +42,25 @@ export default function ParentLogin() {
             <div className="brand-sub">Parent Portal</div>
           </div>
         </div>
-        <h2>Parent sign in</h2>
-        <p className="muted" style={{ fontSize: 13, marginTop: -6, marginBottom: 12 }}>See your child's progress, sessions and receipts.</p>
+        <h2>{mode === 'signup' ? 'Create your account' : 'Parent sign in'}</h2>
+        <p className="muted" style={{ fontSize: 13, marginTop: -6, marginBottom: 12 }}>
+          {mode === 'signup' ? 'Use the email the clinic invited you with — it links to your child.' : "See your child's progress, sessions and receipts."}
+        </p>
         <label>Email</label>
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required />
         <label>Password</label>
         <div className="pw-field">
-          <input type={showPw ? 'text' : 'password'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" required />
+          <input type={showPw ? 'text' : 'password'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required />
           <button type="button" className="pw-toggle" onClick={() => setShowPw((s) => !s)} aria-label={showPw ? 'Hide password' : 'Show password'}>{showPw ? 'Hide' : 'Show'}</button>
         </div>
         {err && <div className="login-err">{err}</div>}
-        <button className="btn-primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
-        <p className="login-hint">For parents of Cornerstone children. Contact the clinic for access. <br /><a href="/login" style={{ color: 'var(--teal)' }}>Staff login →</a></p>
+        <button className="btn-primary" disabled={busy}>{busy ? 'Please wait…' : mode === 'signup' ? 'Create account' : 'Sign in'}</button>
+        <p className="login-hint">
+          {mode === 'signup'
+            ? <>Already registered? <button type="button" className="link-btn" onClick={() => { setMode('login'); setErr(''); }}>Sign in →</button></>
+            : <>First time here? <button type="button" className="link-btn" onClick={() => { setMode('signup'); setErr(''); }}>Create your account →</button></>}
+          <br /><a href="/login" style={{ color: 'var(--teal)' }}>Staff login →</a>
+        </p>
       </form>
     </div>
   );

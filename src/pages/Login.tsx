@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth, roleHome } from '../auth';
+import { useAuth } from '../auth';
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, signup } = useAuth();
   const nav = useNavigate();
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -15,10 +16,17 @@ export default function Login() {
     e.preventDefault();
     setErr(''); setBusy(true);
     try {
-      await login(email.trim(), pw);
+      if (mode === 'signup') await signup(email.trim(), pw);
+      else await login(email.trim(), pw);
       nav('/');
     } catch (x: any) {
-      setErr(x?.code === 'auth/invalid-credential' ? 'Incorrect email or password.' : (x?.message || 'Sign in failed.'));
+      const c = x?.code;
+      setErr(
+        c === 'auth/invalid-credential' ? 'Incorrect email or password.'
+          : c === 'auth/email-already-in-use' ? 'An account already exists for this email — sign in instead.'
+          : c === 'auth/weak-password' ? 'Choose a password of at least 6 characters.'
+          : (x?.message || 'Sign in failed.'),
+      );
     } finally {
       setBusy(false);
     }
@@ -34,17 +42,22 @@ export default function Login() {
             <div className="brand-sub">Therapies Management System</div>
           </div>
         </div>
-        <h2>Sign in</h2>
+        <h2>{mode === 'signup' ? 'Create your account' : 'Sign in'}</h2>
+        {mode === 'signup' && <p className="muted" style={{ fontSize: 13, marginTop: -6, marginBottom: 12 }}>Use the email your clinic invited. You’ll get the right access automatically.</p>}
         <label>Email</label>
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required />
         <label>Password</label>
         <div className="pw-field">
-          <input type={showPw ? 'text' : 'password'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" required />
+          <input type={showPw ? 'text' : 'password'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required />
           <button type="button" className="pw-toggle" onClick={() => setShowPw((s) => !s)} aria-label={showPw ? 'Hide password' : 'Show password'}>{showPw ? 'Hide' : 'Show'}</button>
         </div>
         {err && <div className="login-err">{err}</div>}
-        <button className="btn-primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
-        <p className="login-hint">Staff access only. Contact your administrator for an account.</p>
+        <button className="btn-primary" disabled={busy}>{busy ? 'Please wait…' : mode === 'signup' ? 'Create account' : 'Sign in'}</button>
+        <p className="login-hint">
+          {mode === 'signup'
+            ? <>Already have an account? <button type="button" className="link-btn" onClick={() => { setMode('login'); setErr(''); }}>Sign in →</button></>
+            : <>Invited by your clinic? <button type="button" className="link-btn" onClick={() => { setMode('signup'); setErr(''); }}>Create your account →</button></>}
+        </p>
       </form>
     </div>
   );

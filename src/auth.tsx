@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 
@@ -20,6 +20,7 @@ interface AuthState {
   loading: boolean;
   pending: boolean; // signed in to the TMS but awaiting admin approval
   login: (email: string, password: string) => Promise<void>;
+  signup: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -32,21 +33,51 @@ const FAKE = import.meta.env.DEV && import.meta.env.VITE_FAKE_AUTH === '1';
 /**
  * Resolve a signed-in Firebase user to a STAFF user, from tms_staff/{uid} only.
  * Website admins (admin_users) get NO TMS access — this is the decoupling.
+ * If no staff doc exists but a matching invite does, the staff doc is created on the
+ * spot with the invited role (the standard "invite → first sign-in → provisioned" flow).
  * Throws on a transient read error (caller distinguishes that from non-membership).
  */
 async function resolveStaff(u: User): Promise<TmsUser | null> {
   const snap = await getDoc(doc(db, 'tms_staff', u.uid));
-  if (!snap.exists()) return null;
-  const d = snap.data() as { name?: string; role?: Role; active?: boolean };
-  if (d.active === false) return null;
-  return { uid: u.uid, email: u.email || '', name: d.name || u.email || 'Staff', role: (d.role as Role) || 'therapist' };
+  if (snap.exists()) {
+    const d = snap.data() as { name?: string; role?: Role; active?: boolean };
+    if (d.active === false) return null;
+    return { uid: u.uid, email: u.email || '', name: d.name || u.email || 'Staff', role: (d.role as Role) || 'therapist' };
+  }
+  // Not yet staff — was this email invited? If so, auto-provision with the invited role.
+  const email = (u.email || '').toLowerCase();
+  if (email) {
+    const inv = await getDoc(doc(db, 'tms_invites', email));
+    if (inv.exists()) {
+      const role = ((inv.data() as { role?: Role }).role as Role) || 'therapist';
+      const name = u.displayName || u.email || 'Staff';
+      await setDoc(doc(db, 'tms_staff', u.uid), { name, email: u.email || '', role, active: true }, { merge: true });
+      try { await setDoc(doc(db, 'tms_invites', email), { status: 'accepted', acceptedAt: Date.now() }, { merge: true }); } catch { /* best-effort */ }
+      return { uid: u.uid, email: u.email || '', name, role };
+    }
+  }
+  return null;
 }
-/** Resolve a signed-in Firebase user to a PARENT, from tms_parent_users/{uid} only. */
+/** Resolve a signed-in Firebase user to a PARENT, from tms_parent_users/{uid} only.
+ *  Falls back to a matching tms_parent_invites/{email} → auto-provision on first sign-in. */
 async function resolveParent(u: User): Promise<TmsUser | null> {
   const snap = await getDoc(doc(db, 'tms_parent_users', u.uid));
-  if (!snap.exists()) return null;
-  const d = snap.data() as { name?: string; clientId?: string };
-  return { uid: u.uid, email: u.email || '', name: d.name || u.email || 'Parent', role: 'parent', clientId: d.clientId };
+  if (snap.exists()) {
+    const d = snap.data() as { name?: string; clientId?: string };
+    return { uid: u.uid, email: u.email || '', name: d.name || u.email || 'Parent', role: 'parent', clientId: d.clientId };
+  }
+  const email = (u.email || '').toLowerCase();
+  if (email) {
+    const inv = await getDoc(doc(db, 'tms_parent_invites', email));
+    if (inv.exists()) {
+      const d = inv.data() as { name?: string; clientId?: string };
+      const name = d.name || u.displayName || u.email || 'Parent';
+      await setDoc(doc(db, 'tms_parent_users', u.uid), { name, email: u.email || '', clientId: d.clientId || '' }, { merge: true });
+      try { await setDoc(doc(db, 'tms_parent_invites', email), { status: 'accepted', acceptedAt: Date.now() }, { merge: true }); } catch { /* best-effort */ }
+      return { uid: u.uid, email: u.email || '', name, role: 'parent', clientId: d.clientId };
+    }
+  }
+  return null;
 }
 
 function fakeUser(audience: Audience): TmsUser {
@@ -89,12 +120,17 @@ export function AuthProvider({ children, audience = 'tms' }: { children: ReactNo
   const login = async (email: string, password: string) => {
     await signInWithEmailAndPassword(auth, email, password);
   };
+  // First-time sign-up for an invited user — onAuthStateChanged then resolves their
+  // invite and auto-provisions the right role (or shows "pending" if no invite).
+  const signup = async (email: string, password: string) => {
+    await createUserWithEmailAndPassword(auth, email, password);
+  };
   const logout = async () => {
     await signOut(auth);
     setUser(null); setPending(false);
   };
 
-  return <Ctx.Provider value={{ user, loading, pending, login, logout }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ user, loading, pending, login, signup, logout }}>{children}</Ctx.Provider>;
 }
 
 /** Where each role lands after login. */

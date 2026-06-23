@@ -10,9 +10,9 @@
     },
     {
       "target": "portal",
-      "public": "dist",
+      "public": "dist-portal",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-      "rewrites": [{ "source": "**", "destination": "/portal.html" }]
+      "rewrites": [{ "source": "**", "destination": "/index.html" }]
     }
   ]
 }

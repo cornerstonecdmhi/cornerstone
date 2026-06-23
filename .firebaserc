@@ -6,7 +6,7 @@
     "gen-lang-client-0142488280": {
       "hosting": {
         "tms": ["cornerstone-tms"],
-        "portal": ["cornerstone-portal"]
+        "portal": ["cornerstonecdmhi-portal"]
       }
     }
   }

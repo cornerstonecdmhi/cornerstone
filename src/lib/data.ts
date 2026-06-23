@@ -6,7 +6,7 @@ import {
   type ClinicSettings, type Service, type Package, type Holiday, type WorkHour,
   type Client, type Child, type Therapist, type Appointment, type AttendanceRecord, type ChildPackage,
   type Goal, type AppNotification, type AuditEntry, type Assessment, type CarePlan, type Lead, type WebSubmission,
-  type StaffMember, type AccessRequest, DEFAULT_SETTINGS,
+  type StaffMember, type AccessRequest, type Invite, type ParentInvite, DEFAULT_SETTINGS,
 } from './types';
 import { type InvoiceDoc, compute, fyLabel } from './invoice';
 import * as demo from './demo';
@@ -253,6 +253,21 @@ export async function approveAccess(req: AccessRequest, role: StaffMember['role'
 export async function denyAccess(req: AccessRequest): Promise<void> {
   await saveDocIn('tms_access_requests', { ...req, id: req.id || req.uid, status: 'denied' });
 }
+// ── Invites (proactive: invite an email + role → auto-provisioned on first sign-in) ──
+export const listInvites = () => listCol<Invite>('tms_invites');
+export async function inviteStaff(email: string, role: StaffMember['role'], invitedBy?: string): Promise<void> {
+  const id = email.trim().toLowerCase();
+  await saveDocIn('tms_invites', { id, email: id, role, invitedBy: invitedBy || '', createdAt: Date.now(), status: 'invited' });
+}
+export const deleteInvite = (id: string) => removeDoc('tms_invites', id);
+
+// ── Parent portal invites (invite a guardian email linked to a client → portal access) ──
+export const listParentInvites = () => listCol<ParentInvite>('tms_parent_invites');
+export async function inviteParent(email: string, clientId: string, name?: string, invitedBy?: string): Promise<void> {
+  const id = email.trim().toLowerCase();
+  await saveDocIn('tms_parent_invites', { id, email: id, clientId, name: name || '', invitedBy: invitedBy || '', createdAt: Date.now(), status: 'invited' });
+}
+export const deleteParentInvite = (id: string) => removeDoc('tms_parent_invites', id);
 
 // ── Goals (clinical) ─────────────────────────────────────────────────────────
 export const listGoals = () => listCol<Goal>('tms_goals', 'childName');

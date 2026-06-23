@@ -411,7 +411,30 @@ export interface AccessRequest {
   requestedAt: number;
   status: 'pending' | 'approved' | 'denied';
 }
+// Proactive invite: an admin invites an email + role; the person is auto-provisioned
+// as staff on their first sign-in (no manual approval needed). Keyed by lowercased email.
+export interface Invite {
+  id?: string;          // == lowercased email
+  email: string;
+  role: 'admin' | 'senior' | 'therapist';
+  invitedBy?: string;
+  createdAt: number;
+  status: 'invited' | 'accepted';
+}
 export const STAFF_ROLES = ['admin', 'senior', 'therapist'] as const;
+
+// Parent portal invite — staff invite a guardian (by email) linked to their client
+// record; the parent is auto-provisioned as a tms_parent_users on first sign-in and
+// can then see only that family's child(ren). Keyed by lowercased email.
+export interface ParentInvite {
+  id?: string;          // == lowercased email
+  email: string;
+  clientId: string;     // the tms_clients id this parent is linked to
+  name?: string;        // guardian name, for display
+  invitedBy?: string;
+  createdAt: number;
+  status: 'invited' | 'accepted';
+}
 
 export interface AuditEntry {
   id?: string;

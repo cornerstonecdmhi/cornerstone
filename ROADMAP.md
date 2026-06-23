@@ -8,11 +8,19 @@ Four surfaces, one Firebase backend (project `gen-lang-client-0142488280`, named
 
 ## ✅ Done / live
 - **Website + admin** hosted on Vercel; `admin.` subdomain routing fixed; admin gated on `admin_users`.
-- **Firestore rules deployed** to the named DB (admin gate + content reads work).
-- **Admin "Access & Admins" page** — approve requests + manage admins from the UI.
+- **TMS + Parent Portal DEPLOYED** to Firebase Hosting (2026-06-23):
+  TMS → https://cornerstone-tms.web.app · Portal → https://cornerstonecdmhi-portal.web.app
+  (each site serves its own app; portal uses `dist-portal` so `/` is the portal entry).
+- **Firestore rules deployed** to the named DB — now incl. the **invite + role model**.
+- **Invite / role system (Shopify-style) built across all panels:**
+  - Website admin: roles **owner / admin / editor**, invite-by-email, role editing, nav gated by role.
+  - TMS: **invite staff** (email + role → auto-provisioned on first sign-in) + **parent-portal invites**.
+  - Self-service **request access** kept as the fallback; **last-owner/last-admin guards** everywhere.
+  - Login pages on TMS + portal got a **"Create your account"** path for invited users.
+- **Admin "Access & Admins"** + **TMS "Staff & Access"** pages — invite, approve, set roles, remove from the UI.
 - **TMS**: 15 digitized assessments, Care Plans, scheduling, billing, date-ranged reports,
   assessment-to-assessment tracking, notification center (9 alert kinds), tiered roles
-  (admin/senior/therapist), Staff & Access approval queue, mobile-responsive.
+  (admin/senior/therapist), mobile-responsive.
 - **Parent portal**: split into its own app/bundle, own login, sees only its own child,
   care plan + shared reports + notices.
 - **Security**: per-surface identity (`admin_users` / `tms_staff` / `tms_parent_users`),
@@ -20,25 +28,27 @@ Four surfaces, one Firebase backend (project `gen-lang-client-0142488280`, named
 
 ---
 
-## ▶ PHASE 1 (NOW) — Take TMS + Parent Portal live
-*Mirrors what we did for the website. Hosting = Firebase (per `HOSTING-RUNBOOK.md`).*
-- [ ] `firebase deploy` the **TMS + portal** builds to two Firebase Hosting sites
-      (`cornerstone-tms`, `cornerstone-portal`) → subdomains `tms.` / `portal.`
-- [ ] Provision **`tms_staff`** for real staff (admin/senior/therapist) + `tms_parent_users` for parents.
+## ▶ PHASE 1 — Take TMS + Parent Portal live  (deploy ✅ · 3 manual steps left)
+*Hosting = Firebase. Apps are deployed and reachable at the `*.web.app` URLs above.*
+- [x] `firebase deploy` the **TMS + portal** builds to two Firebase Hosting sites
+      (`cornerstone-tms`, `cornerstonecdmhi-portal`). DONE.
+- [ ] **Bootstrap the first TMS admin** — add `tms_staff/{your-uid}` `{role:"admin",active:true}` in
+      the console (one-time; required before invites/approvals work). See HOSTING-RUNBOOK PART 1.
+- [ ] **Custom subdomains** `tms.` / `portal.` → Console → Hosting → Add custom domain → DNS at registrar.
+- [ ] **Authorized domains** — add the two `*.web.app` (and later the custom) domains in Auth → Settings.
 - [ ] Smoke-test the 3×3: staff→tms only, parent→portal only, website-admin→website only.
-- [ ] (Their manual part: `firebase hosting:sites:create`, DNS, deploy. My runbook is ready.)
 
-## ▶ PHASE 2 — Access, Invites & Roles (the "fully functional" gap)
-*Shopify-style staff management across ALL panels. This is the big missing piece.*
-- [ ] **Invite by email** (proactive): admin enters email + role → invite stored → invitee
-      signs in → **auto-provisioned** with that role (no manual approval). Pending invites listed.
-- [ ] **Add / remove user** from the panel (already partial: approve = add; remove exists).
-- [ ] **Request access** (reactive, already built): sign-in → request → approve. Keep as fallback.
-- [ ] **Role-specific access / levels** — TMS already tiered (admin/senior/therapist). Add
-      **roles to the website admin** (e.g. owner / admin / editor) + gate sections accordingly.
-- [ ] **Parent invites**: invite a parent by email, linked to their child, → portal access.
-- [ ] Consistent **Access** screen on every panel (TMS has Staff & Access; website admin has
-      Access & Admins; portal = parents managed from TMS).
+## ▶ PHASE 2 — Access, Invites & Roles (the "fully functional" gap)  ✅ BUILT
+*Shopify-style staff management across ALL panels. Shipped 2026-06-23.*
+- [x] **Invite by email** (proactive): admin enters email + role → `*_invites/{email}` → invitee
+      signs in → **auto-provisioned** with that role (no manual approval). Pending invites listed + revocable.
+- [x] **Add / remove user** from the panel; **request access** kept as the reactive fallback.
+- [x] **Role-specific access / levels** — website admin now has **owner / admin / editor**; nav +
+      sensitive collections (people, integrations, payments) gated to owner/admin in UI **and rules**.
+- [x] **Parent invites**: invite a parent by email linked to a family → portal access, scoped to their child.
+- [x] Consistent **Access** screen on every panel (TMS "Staff & Access"; website "Access & Admins").
+- [ ] *Remaining polish:* a true read-only **viewer** role (needs per-collection read/write split in rules);
+      granular per-section editor permissions; audit-log the access changes (`tms_audit_logs` exists).
 - See "Shopify-inspired model" below.
 
 ## ⏸ PHASE 3 — Integrations & Auto-notifications (DEFERRED — budget)

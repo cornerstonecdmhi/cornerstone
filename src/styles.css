@@ -70,6 +70,8 @@ code{background:#eef3f4;padding:1px 5px;border-radius:5px;font-size:.92em}
 .pw-toggle{position:absolute;right:10px;top:20px;transform:translateY(-50%);background:transparent;border:none;color:var(--teal);font-size:12px;font-weight:700;cursor:pointer;padding:2px 4px}
 .pw-toggle:hover{text-decoration:underline}
 .login-hint{font-size:11.5px;color:var(--muted);text-align:center;margin:14px 0 0}
+.link-btn{background:none;border:none;color:var(--teal);font-weight:700;font-size:inherit;cursor:pointer;padding:0}
+.link-btn:hover{text-decoration:underline}
 
 /* ---------- Tabs ---------- */
 .tabs-bar{display:flex;align-items:center;gap:6px;margin-bottom:16px;flex-wrap:wrap}
