@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth';
 
 export default function ParentLogin() {
-  const { login, signup } = useAuth();
+  const { login, signup, rejected } = useAuth();
   const nav = useNavigate();
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
@@ -53,13 +53,18 @@ export default function ParentLogin() {
           <input type={showPw ? 'text' : 'password'} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required />
           <button type="button" className="pw-toggle" onClick={() => setShowPw((s) => !s)} aria-label={showPw ? 'Hide password' : 'Show password'}>{showPw ? 'Hide' : 'Show'}</button>
         </div>
+        {rejected && !err && (
+          <div className="login-err">
+            This email isn’t registered for the parent portal yet. Please ask the clinic to
+            invite you — you’ll then sign in with this same email.
+          </div>
+        )}
         {err && <div className="login-err">{err}</div>}
         <button className="btn-primary" disabled={busy}>{busy ? 'Please wait…' : mode === 'signup' ? 'Create account' : 'Sign in'}</button>
         <p className="login-hint">
           {mode === 'signup'
             ? <>Already registered? <button type="button" className="link-btn" onClick={() => { setMode('login'); setErr(''); }}>Sign in →</button></>
-            : <>First time here? <button type="button" className="link-btn" onClick={() => { setMode('signup'); setErr(''); }}>Create your account →</button></>}
-          <br /><a href="/login" style={{ color: 'var(--teal)' }}>Staff login →</a>
+            : <>First time here (and invited by the clinic)? <button type="button" className="link-btn" onClick={() => { setMode('signup'); setErr(''); }}>Create your account →</button></>}
         </p>
       </form>
     </div>

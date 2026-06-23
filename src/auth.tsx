@@ -18,7 +18,8 @@ export interface TmsUser {
 interface AuthState {
   user: TmsUser | null;
   loading: boolean;
-  pending: boolean; // signed in to the TMS but awaiting admin approval
+  pending: boolean;  // signed in to the TMS but awaiting admin approval
+  rejected: boolean; // portal: signed in with an email that isn't registered/invited
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -56,6 +57,22 @@ async function resolveStaff(u: User): Promise<TmsUser | null> {
       return { uid: u.uid, email: u.email || '', name, role };
     }
   }
+  // FIRST-RUN BOOTSTRAP: if no TMS admin exists yet (the tms_config/bootstrap sentinel
+  // is absent) and this user is an existing WEBSITE admin (already a vetted identity),
+  // claim them as the first TMS admin. Secure: only a website admin, only once — the
+  // sentinel locks it so a later website admin can NOT self-promote into the clinic.
+  try {
+    const claimed = await getDoc(doc(db, 'tms_config', 'bootstrap'));
+    if (!claimed.exists()) {
+      const webAdmin = await getDoc(doc(db, 'admin_users', u.uid));
+      if (webAdmin.exists()) {
+        const name = u.displayName || u.email || 'Admin';
+        await setDoc(doc(db, 'tms_staff', u.uid), { name, email: u.email || '', role: 'admin', active: true }, { merge: true });
+        try { await setDoc(doc(db, 'tms_config', 'bootstrap'), { claimedBy: u.uid, claimedAt: Date.now() }); } catch { /* best-effort lock */ }
+        return { uid: u.uid, email: u.email || '', name, role: 'admin' };
+      }
+    }
+  } catch { /* fall through to pending */ }
   return null;
 }
 /** Resolve a signed-in Firebase user to a PARENT, from tms_parent_users/{uid} only.
@@ -90,6 +107,7 @@ export function AuthProvider({ children, audience = 'tms' }: { children: ReactNo
   const [user, setUser] = useState<TmsUser | null>(FAKE ? fakeUser(audience) : null);
   const [loading, setLoading] = useState(!FAKE);
   const [pending, setPending] = useState(false);
+  const [rejected, setRejected] = useState(false);
 
   useEffect(() => {
     if (FAKE) return;
@@ -97,7 +115,7 @@ export function AuthProvider({ children, audience = 'tms' }: { children: ReactNo
       if (!u) { setUser(null); setPending(false); setLoading(false); return; }
       try {
         const resolved = audience === 'portal' ? await resolveParent(u) : await resolveStaff(u);
-        if (resolved) { setUser(resolved); setPending(false); }
+        if (resolved) { setUser(resolved); setPending(false); setRejected(false); }
         else if (audience === 'tms') {
           // Signed in but not yet provisioned staff → record an access request and
           // show the "pending approval" screen (an admin approves it in Staff & Access).
@@ -108,7 +126,8 @@ export function AuthProvider({ children, audience = 'tms' }: { children: ReactNo
           } catch { /* ignore */ }
           setUser(null); setPending(true);
         } else {
-          await signOut(auth); setUser(null); setPending(false); // parent surface: reject non-parents
+          // Parent surface: this email isn't registered/invited → sign out and tell them.
+          setRejected(true); await signOut(auth); setUser(null); setPending(false);
         }
       } catch {
         setUser(null); setPending(false); // transient read error — no access this load, no forced logout
@@ -118,19 +137,21 @@ export function AuthProvider({ children, audience = 'tms' }: { children: ReactNo
   }, [audience]);
 
   const login = async (email: string, password: string) => {
+    setRejected(false);
     await signInWithEmailAndPassword(auth, email, password);
   };
   // First-time sign-up for an invited user — onAuthStateChanged then resolves their
-  // invite and auto-provisions the right role (or shows "pending" if no invite).
+  // invite and auto-provisions the right role (or shows "pending"/"rejected" if none).
   const signup = async (email: string, password: string) => {
+    setRejected(false);
     await createUserWithEmailAndPassword(auth, email, password);
   };
   const logout = async () => {
     await signOut(auth);
-    setUser(null); setPending(false);
+    setUser(null); setPending(false); setRejected(false);
   };
 
-  return <Ctx.Provider value={{ user, loading, pending, login, signup, logout }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ user, loading, pending, rejected, login, signup, logout }}>{children}</Ctx.Provider>;
 }
 
 /** Where each role lands after login. */
