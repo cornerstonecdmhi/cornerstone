@@ -28,13 +28,14 @@ _Last updated: 2026-06-23. Single source of truth for the four surfaces, every p
 
 The apps are **already deployed and reachable** at the `.web.app` URLs above. Three things finish the job — only you can do them:
 
-### Step 1 — Bootstrap the FIRST TMS admin (required, one-time)
-Without this, even you hit "pending approval" on the TMS, because the invite/approval system needs *one* admin to exist first.
-1. Open **https://cornerstone-tms.web.app** → **Create your account** (or sign in) with your email. You'll see "pending approval" — expected.
-2. Firebase Console → **Firestore** → pick the **`ai-studio-7ad19acf…`** database → collection **`tms_staff`** → **Add document**:
-   - **Document ID** = your Auth UID (Console → Authentication → Users → copy your UID; it's also the id of the `tms_access_requests` doc that was just created).
-   - Fields: `name` (string), `email` (string), `role` = `"admin"`, `active` = `true` (boolean).
-3. Reload the TMS — you're in as admin. **From now on, everyone else is added from inside the app** (Staff & Access → Invite). No more console work.
+### Step 1 — Become the first TMS admin (self-service — no console needed)
+The first TMS admin is **claimed automatically**: sign into the TMS with **the same account you use for the website Admin panel** (an `admin_users` member). Because no TMS admin exists yet, the system promotes that website-admin to the first TMS admin on sign-in, then **locks** the bootstrap (a `tms_config/bootstrap` sentinel) so no one else can self-promote later.
+
+1. Open **https://cornerstone-tms.web.app**. If you're on the "pending" screen, **Sign out**.
+2. **Sign in with your website-admin email** (the one that already works at `admin.` / the admin panel).
+3. You land straight in as **admin**. From here, add everyone else from **Staff & Access → Invite** — no console work, ever.
+
+> Security: only an existing, vetted website admin can claim it, and only once. A *second* website admin added later can **not** self-promote into the clinic (the sentinel blocks it). If you'd rather do it by hand, you can still add `tms_staff/{your-uid}` `{role:"admin",active:true}` in the Firestore console.
 
 ### Step 2 — Point the friendly subdomains (DNS)
 Firebase Console → **Hosting** → for each site → **Add custom domain**:
