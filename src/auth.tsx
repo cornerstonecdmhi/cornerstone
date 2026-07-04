@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, type User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithPopup, type User } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 
@@ -22,6 +22,7 @@ interface AuthState {
   rejected: boolean; // portal: signed in with an email that isn't registered/invited
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -146,12 +147,20 @@ export function AuthProvider({ children, audience = 'tms' }: { children: ReactNo
     setRejected(false);
     await createUserWithEmailAndPassword(auth, email, password);
   };
+  // Google Sign-In — Google-verified emails carry email_verified:true so an invited
+  // user is provisioned immediately without a separate verification step.
+  const loginWithGoogle = async () => {
+    setRejected(false);
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    await signInWithPopup(auth, provider);
+  };
   const logout = async () => {
     await signOut(auth);
     setUser(null); setPending(false); setRejected(false);
   };
 
-  return <Ctx.Provider value={{ user, loading, pending, rejected, login, signup, logout }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ user, loading, pending, rejected, login, signup, loginWithGoogle, logout }}>{children}</Ctx.Provider>;
 }
 
 /** Where each role lands after login. */
