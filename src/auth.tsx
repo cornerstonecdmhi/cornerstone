@@ -46,18 +46,11 @@ async function resolveStaff(u: User): Promise<TmsUser | null> {
     if (d.active === false) return null;
     return { uid: u.uid, email: u.email || '', name: d.name || u.email || 'Staff', role: (d.role as Role) || 'therapist' };
   }
-  // Not yet staff — was this email invited? If so, auto-provision with the invited role.
-  const email = (u.email || '').toLowerCase();
-  if (email) {
-    const inv = await getDoc(doc(db, 'tms_invites', email));
-    if (inv.exists()) {
-      const role = ((inv.data() as { role?: Role }).role as Role) || 'therapist';
-      const name = u.displayName || u.email || 'Staff';
-      await setDoc(doc(db, 'tms_staff', u.uid), { name, email: u.email || '', role, active: true }, { merge: true });
-      try { await setDoc(doc(db, 'tms_invites', email), { status: 'accepted', acceptedAt: Date.now() }, { merge: true }); } catch { /* best-effort */ }
-      return { uid: u.uid, email: u.email || '', name, role };
-    }
-  }
+  // Not yet staff. ACTIVATION POLICY (mirrors the website admin): an invite pre-
+  // authorises the identity but does NOT grant access. An invited staff member is
+  // therefore NOT auto-provisioned — they fall through to the pending path below, and
+  // an admin activates them in Staff & Access (which assigns the role). This stops a
+  // broad clinical-access account from being created without an explicit human step.
   // FIRST-RUN BOOTSTRAP: if no TMS admin exists yet (the tms_config/bootstrap sentinel
   // is absent) and this user is an existing WEBSITE admin (already a vetted identity),
   // claim them as the first TMS admin. Secure: only a website admin, only once — the

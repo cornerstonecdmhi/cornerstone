@@ -90,6 +90,9 @@ export default function StaffAccess() {
     try { if (i.id) await deleteParentInvite(i.id); flash('Parent invite revoked.'); await load(); } catch { flash('Failed.'); }
   };
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name || id;
+  // Match a pending request to an outstanding invite (by email) so we can flag invited
+  // people and pre-fill the role from the trusted, admin-created invite.
+  const inviteFor = (email?: string) => invites.find((i) => (i.email || '').toLowerCase() === (email || '').toLowerCase());
 
   return (
     <>
@@ -100,7 +103,7 @@ export default function StaffAccess() {
       {isAdmin && (
         <div className="card">
           <h3>Invite a teammate</h3>
-          <p className="muted" style={{ marginTop: -4 }}>They’ll be granted the chosen role automatically the first time they sign in with this email — no separate approval needed.</p>
+          <p className="muted" style={{ marginTop: -4 }}>Inviting reserves their role and identity. When they first sign in they appear under <b>Pending access requests</b> below for you to activate — access is never granted automatically.</p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 8 }}>
             <input type="email" placeholder="teammate@email.com" value={invEmail} onChange={(e) => setInvEmail(e.target.value)} style={{ flex: '1 1 240px' }} />
             <select value={invRole} onChange={(e) => setInvRole(e.target.value as Role)}>{STAFF_ROLES.map((ro) => <option key={ro}>{ro}</option>)}</select>
@@ -132,14 +135,17 @@ export default function StaffAccess() {
           <table className="grid">
             <thead><tr><th>Requested</th><th>Name / email</th><th>Approve as</th><th></th></tr></thead>
             <tbody>
-              {requests.map((r) => (
+              {requests.map((r) => {
+                const inv = inviteFor(r.email);
+                return (
                 <tr key={r.uid}>
                   <td style={{ whiteSpace: 'nowrap' }}>{when(r.requestedAt)}</td>
-                  <td><b>{r.name || '—'}</b><div className="muted" style={{ fontSize: 11 }}>{r.email}</div></td>
-                  <td><select value={roleSel[r.uid] || 'therapist'} onChange={(e) => setRoleSel((s) => ({ ...s, [r.uid]: e.target.value as Role }))}>{STAFF_ROLES.map((ro) => <option key={ro}>{ro}</option>)}</select></td>
-                  <td className="acts"><button className="mini save" onClick={() => approve(r)}>Approve</button> <button className="mini del" onClick={() => deny(r)}>Deny</button></td>
+                  <td><b>{r.name || '—'}</b>{inv && <span className="pill active" style={{ marginLeft: 6 }}>invited · {inv.role}</span>}<div className="muted" style={{ fontSize: 11 }}>{r.email}</div></td>
+                  <td><select value={roleSel[r.uid] || (inv?.role as Role) || 'therapist'} onChange={(e) => setRoleSel((s) => ({ ...s, [r.uid]: e.target.value as Role }))}>{STAFF_ROLES.map((ro) => <option key={ro}>{ro}</option>)}</select></td>
+                  <td className="acts"><button className="mini save" onClick={() => approve(r)}>Activate</button> <button className="mini del" onClick={() => deny(r)}>Deny</button></td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}
