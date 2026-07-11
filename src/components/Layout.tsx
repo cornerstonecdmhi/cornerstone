@@ -2,6 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth, type Role } from '../auth';
 import { DEMO } from '../firebase';
 import NotificationCenter from './NotificationCenter';
+import { IdleGuard } from './IdleGuard';
 
 interface NavItem { to: string; label: string; icon: string; roles: Role[]; }
 
@@ -33,6 +34,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-shell">
+      <IdleGuard />
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">C</span>

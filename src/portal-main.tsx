@@ -7,13 +7,14 @@ import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth';
 import ParentPortal from './pages/ParentPortal';
 import ParentLogin from './pages/ParentLogin';
+import { IdleGuard } from './components/IdleGuard';
 import './styles.css';
 
 function PortalRoot() {
   const { user, loading } = useAuth();
   if (loading) return <div className="center muted">Loading…</div>;
   if (!user) return <ParentLogin />;
-  return <ParentPortal />;
+  return <><IdleGuard /><ParentPortal /></>;
 }
 
 createRoot(document.getElementById('root')!).render(
