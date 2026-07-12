@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, GoogleAuthProvider, signInWithPopup, type User } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import { setSentryUser } from './instrument';
 
 export type Role = 'admin' | 'senior' | 'therapist' | 'parent';
 /** Which access surface this app instance serves. Each accepts ONLY its own members. */
@@ -106,10 +107,10 @@ export function AuthProvider({ children, audience = 'tms' }: { children: ReactNo
   useEffect(() => {
     if (FAKE) return;
     return onAuthStateChanged(auth, async (u) => {
-      if (!u) { setUser(null); setPending(false); setLoading(false); return; }
+      if (!u) { setUser(null); setPending(false); setSentryUser(null); setLoading(false); return; }
       try {
         const resolved = audience === 'portal' ? await resolveParent(u) : await resolveStaff(u);
-        if (resolved) { setUser(resolved); setPending(false); setRejected(false); }
+        if (resolved) { setUser(resolved); setPending(false); setRejected(false); setSentryUser(resolved.uid, resolved.role); }
         else if (audience === 'tms') {
           // Signed in but not yet provisioned staff → record an access request and
           // show the "pending approval" screen (an admin approves it in Staff & Access).

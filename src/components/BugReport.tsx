@@ -3,6 +3,9 @@ import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../auth';
 import { APP_VERSION } from '../version';
+import { Sentry } from '../instrument';
+
+const SENTRY_LEVEL = { low: 'info', medium: 'warning', high: 'error', blocker: 'error' } as const;
 
 const SEVERITIES = ['low', 'medium', 'high', 'blocker'] as const;
 type Severity = typeof SEVERITIES[number];
@@ -26,6 +29,13 @@ export function BugReport() {
     if (!text.trim() || sending) return;
     setSending(true);
     try {
+      // Link the manual report to a Sentry event so it lands in the same triage tool
+      // (no duplicated crash data — the report is the message; context comes from Sentry).
+      let sentryEventId = '';
+      try {
+        sentryEventId = Sentry.captureMessage(`Bug report [${severity}] · ${location.pathname}`, SENTRY_LEVEL[severity]);
+      } catch { /* Sentry inert without a DSN — fine */ }
+
       await addDoc(collection(db, 'bug_reports'), {
         text: text.trim().slice(0, 2000),
         severity,
@@ -37,6 +47,7 @@ export function BugReport() {
         email: user?.email || '',
         role: user?.role || '',
         version: APP_VERSION,
+        sentryEventId,
         status: 'open',
         createdAt: serverTimestamp(),
         at: Date.now(),
