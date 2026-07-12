@@ -3,6 +3,8 @@ import { useAuth, type Role } from '../auth';
 import { DEMO } from '../firebase';
 import NotificationCenter from './NotificationCenter';
 import { IdleGuard } from './IdleGuard';
+import { BugReport } from './BugReport';
+import { APP_VERSION } from '../version';
 
 interface NavItem { to: string; label: string; icon: string; roles: Role[]; }
 
@@ -40,7 +42,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <span className="brand-mark">C</span>
           <div>
             <div className="brand-name">Cornerstone</div>
-            <div className="brand-sub">TMS</div>
+            <div className="brand-sub">TMS · {APP_VERSION}</div>
           </div>
         </div>
         <nav>
@@ -55,6 +57,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <header className="topbar">
           <div>{DEMO && <span className="demo-badge">● Demo data — sample records (not your real data)</span>}</div>
           <div className="user-box">
+            <BugReport />
             <NotificationCenter />
             <div className="user-meta">
               <div className="user-name">{user?.name}</div>
