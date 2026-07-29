@@ -1,18 +1,27 @@
 {
   "//": "Hosting ONLY for the TMS + Parent Portal frontends (same dist, two entries).",
   "//deploy": "Functions + Firestore rules live in ../cornerstone-clinic and deploy from there.",
+  "//cache": "Hashed /assets are immutable (safe to cache forever); HTML is no-cache so a new deploy is picked up on the next load — critical during the bug-fix pilot.",
   "hosting": [
     {
       "target": "tms",
       "public": "dist",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-      "rewrites": [{ "source": "**", "destination": "/index.html" }]
+      "rewrites": [{ "source": "**", "destination": "/index.html" }],
+      "headers": [
+        { "source": "**/*.@(js|css|png|jpg|jpeg|gif|svg|webp|woff2)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
+        { "source": "**/*.html", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+      ]
     },
     {
       "target": "portal",
       "public": "dist-portal",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-      "rewrites": [{ "source": "**", "destination": "/index.html" }]
+      "rewrites": [{ "source": "**", "destination": "/index.html" }],
+      "headers": [
+        { "source": "**/*.@(js|css|png|jpg|jpeg|gif|svg|webp|woff2)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
+        { "source": "**/*.html", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+      ]
     }
   ]
 }
