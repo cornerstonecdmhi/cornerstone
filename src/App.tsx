@@ -18,7 +18,7 @@ import Goals from './pages/Goals';
 import Reports from './pages/Reports';
 import Audit from './pages/Audit';
 import Notifications from './pages/Notifications';
-import { Today, MyDay, Clinical } from './pages/dashboards';
+import { Today, MyDay, Clinical, FrontDesk } from './pages/dashboards';
 
 /** Sends "/" to the right home for the signed-in role. */
 function HomeRedirect() {
@@ -42,12 +42,13 @@ export default function App() {
       <Route path="/" element={<HomeRedirect />} />
 
       <Route path="/today"      element={page(<Today />, ['admin'])} />
+      <Route path="/front-desk" element={page(<FrontDesk />, ['reception'])} />
       <Route path="/my-day"     element={page(<MyDay />, ['therapist'])} />
       <Route path="/clinical"   element={page(<Clinical />, ['senior'])} />
 
-      <Route path="/leads"      element={page(<Leads />, ['admin'])} />
-      <Route path="/schedule"   element={page(<Schedule />, ['admin', 'senior', 'therapist'])} />
-      <Route path="/clients"    element={page(<Clients />, ['admin', 'senior', 'therapist'])} />
+      <Route path="/leads"      element={page(<Leads />, ['admin', 'reception'])} />
+      <Route path="/schedule"   element={page(<Schedule />, ['admin', 'senior', 'therapist', 'reception'])} />
+      <Route path="/clients"    element={page(<Clients />, ['admin', 'senior', 'therapist', 'reception'])} />
       <Route path="/therapists" element={page(<Therapists />, ['admin', 'senior'])} />
       <Route path="/assessments" element={page(<Assessments />, ['admin', 'senior'])} />
       <Route path="/care-plans" element={page(<CarePlans />, ['admin', 'senior'])} />
@@ -55,7 +56,7 @@ export default function App() {
       <Route path="/attendance" element={page(<Attendance />, ['admin', 'senior'])} />
       <Route path="/goals"      element={page(<Goals />, ['admin', 'senior', 'therapist'])} />
       <Route path="/billing"    element={page(<Billing />, ['admin'])} />
-      <Route path="/reports"    element={page(<Reports />, ['admin', 'senior'])} />
+      <Route path="/reports"    element={page(<Reports />, ['admin'])} />
       <Route path="/notifications" element={page(<Notifications />, ['admin'])} />
       <Route path="/audit"      element={page(<Audit />, ['admin'])} />
       <Route path="/settings"   element={page(<Settings />, ['admin'])} />

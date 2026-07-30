@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { listAppointments, saveAppointment, deleteAppointment, listChildren, listTherapists, listServices, listWorkHours, listHolidays, getSettings, consumeCredit } from '../lib/data';
+import { useAuth } from '../auth';
+import { listAppointments, saveAppointment, deleteAppointment, listTherapists, listServices, listWorkHours, listHolidays, getSettings, consumeCredit, appointmentsForUserOnDate, childrenForUser, writeTmsAudit } from '../lib/data';
 import { type Appointment, type Child, type Therapist, type Service, type WorkHour, type Holiday, APPT_TYPE, APPT_STATUS } from '../lib/types';
 import { dmy } from '../lib/invoice';
 import { generateSlots, unavailableReason, hasConflict } from '../lib/slots';
@@ -12,6 +13,11 @@ const blank = (date: string): Appointment => ({
 });
 
 export default function Schedule() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const isReception = user?.role === 'reception';
+  const isClinician = user?.role === 'therapist' || user?.role === 'senior';
+  const canSchedule = isAdmin || isReception; // create / edit / reschedule / confirm
   const [date, setDate] = useState(today());
   const [appts, setAppts] = useState<Appointment[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
@@ -28,7 +34,7 @@ export default function Schedule() {
 
   useEffect(() => {
     (async () => {
-      try { setChildren(await listChildren()); } catch { /* preview */ }
+      try { setChildren(await childrenForUser(user)); } catch { /* preview */ }
       try { setTherapists(await listTherapists()); } catch { /* preview */ }
       try { setServices(await listServices()); } catch { /* preview */ }
       try { setWorkhours(await listWorkHours()); } catch { /* preview */ }
@@ -36,7 +42,8 @@ export default function Schedule() {
       try { setAssessorName((await getSettings()).assessorName); } catch { /* preview */ }
     })();
   }, []);
-  const loadDay = async (d: string) => { try { setAppts(await listAppointments(d)); } catch { setAppts([]); } };
+  // Clinicians see only their assigned children's appointments (child-anchored); admin/reception see all.
+  const loadDay = async (d: string) => { try { setAppts(await (isClinician ? appointmentsForUserOnDate(user, d) : listAppointments(d))); } catch { setAppts([]); } };
   useEffect(() => { loadDay(date); }, [date]);
   // Appointments on the form's date (for slot availability + conflict checks)
   useEffect(() => { if (edit?.date) listAppointments(edit.date).then(setFormAppts).catch(() => setFormAppts([])); }, [edit?.date]);
@@ -49,7 +56,9 @@ export default function Schedule() {
     let consumed = a.creditConsumed;
     let note = '';
     // Attended / no-show consumes a package credit (no-show is a commitment device).
-    if ((status === 'Attended' || status === 'No-show') && !a.creditConsumed) {
+    // Credit/package decrement is an OPERATIONAL write (admin/reception); a clinician may
+    // mark attendance status but does not write package credits (reconciled by front-desk).
+    if ((status === 'Attended' || status === 'No-show') && !a.creditConsumed && canSchedule) {
       const disc = services.find((s) => s.name === a.serviceName)?.discipline || '';
       try {
         const res = await consumeCredit(a.childId, disc);
@@ -75,8 +84,13 @@ export default function Schedule() {
   };
   const remove = async () => {
     if (!edit?.id) { setEdit(null); return; }
-    try { await deleteAppointment(edit.id); setEdit(null); await loadDay(date); flash('Removed.'); }
-    catch { flash('Delete failed.'); }
+    if (!isAdmin) return; // hard delete is admin-only; reception cancels via status
+    if (!window.confirm('Permanently delete this appointment? This cannot be undone. (To cancel, set status to Cancelled instead.)')) return;
+    try {
+      await deleteAppointment(edit.id);
+      await writeTmsAudit({ eventType: 'clinical_hard_delete', targetType: 'appointment', targetId: edit.id, actorRole: user?.role, metadata: { childId: edit.childId } });
+      setEdit(null); await loadDay(date); flash('Removed.');
+    } catch { flash('Delete failed.'); }
   };
 
   const therapistsForService = (svc: string) => {
@@ -109,7 +123,7 @@ export default function Schedule() {
         <button className="btn-ghost" onClick={() => setDate(shift(date, 1))}>Next →</button>
         <button className="btn-ghost" onClick={() => setDate(today())}>Today</button>
         <span style={{ flex: 1 }} />
-        {!edit && <button className="btn-primary" onClick={() => { setGateOverride(false); setEdit(blank(date)); }}>+ Add appointment</button>}
+        {!edit && canSchedule && <button className="btn-primary" onClick={() => { setGateOverride(false); setEdit(blank(date)); }}>+ Add appointment</button>}
         {msg && <span className="save-flash">{msg}</span>}
       </div>
 
@@ -130,13 +144,15 @@ export default function Schedule() {
                     <td><span className={'pill ' + a.status.replace(/\W/g, '').toLowerCase()}>{a.status}</span></td>
                     <td className="acts">
                       {a.status === 'Requested'
-                        ? <button className="mini save" onClick={async () => { await persist({ ...a, status: 'Scheduled' }); flash('Booking confirmed.'); }}>Confirm</button>
+                        ? (canSchedule
+                            ? <button className="mini save" onClick={async () => { await persist({ ...a, status: 'Scheduled' }); flash('Booking confirmed.'); }}>Confirm</button>
+                            : <span className="muted">—</span>)
                         : <>
                             <button className="mini save" onClick={() => quickStatus(a, 'Attended')}>✓</button>
                             <button className="mini del" onClick={() => quickStatus(a, 'No-show')}>✗</button>
                           </>}
                     </td>
-                    <td className="acts"><button className="mini" style={{ background: 'var(--panel)', color: 'var(--teal)' }} onClick={() => { setGateOverride(false); setEdit(a); }}>Edit</button></td>
+                    <td className="acts">{canSchedule && <button className="mini" style={{ background: 'var(--panel)', color: 'var(--teal)' }} onClick={() => { setGateOverride(false); setEdit(a); }}>Edit</button>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -194,7 +210,7 @@ export default function Schedule() {
           <div className="hint-note">Slots respect clinic hours, holidays, the therapist's hours/leave, capacity and existing bookings — so no double-booking. Reassign = change therapist; reschedule = change date/time.</div>
           <div className="row-between" style={{ marginTop: 16 }}>
             <button className="btn-primary" onClick={saveForm}>Save appointment</button>
-            <button className="mini del" onClick={remove}>{edit.id ? 'Delete' : 'Discard'}</button>
+            {(!edit.id || isAdmin) && <button className="mini del" onClick={remove}>{edit.id ? 'Delete' : 'Discard'}</button>}
           </div>
         </div>
       )}

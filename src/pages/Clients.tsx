@@ -1,40 +1,82 @@
 import { useEffect, useState } from 'react';
+import { useAuth } from '../auth';
 import {
-  listClients, saveClient, deleteClient, listChildren, saveChild, deleteChild,
+  listClients, saveClient, deleteClient, saveChild, deleteChild,
+  childrenForUser, listStaff, setAssignedStaff, writeTmsAudit,
 } from '../lib/data';
-import { type Client, type Child, DISCIPLINES, CHILD_STATUS, REVIEW_CADENCE } from '../lib/types';
+import { type Client, type Child, type StaffMember, DISCIPLINES, CHILD_STATUS, REVIEW_CADENCE } from '../lib/types';
 
 const blankClient = (): Client => ({ name: '', relationship: 'Mother', phone: '', email: '', address: '', consentGiven: false, consentDate: '', source: 'Walk-in', notes: '' });
 const blankChild = (): Child => ({ name: '', dob: '', gender: 'Male', parentId: '', concern: '', disciplinesNeeded: [], requirementsNote: '', assignedTherapists: '', caseManager: '', startDate: new Date().toISOString().slice(0, 10), status: 'In Assessment', school: '', notes: '', continuityCritical: false, reviewCadence: 'Monthly', nextReviewDate: '', nextReassessDate: '', assessmentDone: false });
 
 export default function Clients() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const isReception = user?.role === 'reception';
+  const isClinician = user?.role === 'therapist' || user?.role === 'senior';
+  const canEditChild = isAdmin || isReception; // clinicians never write tms_children
   const [tab, setTab] = useState<'Children' | 'Parents'>('Children');
   const [clients, setClients] = useState<Client[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
+  const [staff, setStaff] = useState<StaffMember[]>([]);
   const [child, setChild] = useState<Child | null>(null);
   const [client, setClient] = useState<Client | null>(null);
+  const [origParentId, setOrigParentId] = useState<string>(''); // to audit ownership changes
   const [msg, setMsg] = useState('');
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 3000); };
 
   const load = async () => {
-    try { setClients(await listClients()); } catch { /* preview */ }
-    try { setChildren(await listChildren()); } catch { /* preview */ }
+    // Clinicians never read the parent-contact directory; they see only assigned children.
+    if (!isClinician) { try { setClients(await listClients()); } catch { /* preview */ } }
+    if (isAdmin) { try { setStaff(await listStaff()); } catch { /* preview */ } } // assignment picker
+    try { setChildren(await childrenForUser(user)); } catch { /* preview */ }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { if (user) load(); }, [user]);
 
+  const openChild = (c: Child) => { setChild(c); setOrigParentId(c.parentId || ''); };
   const parentName = (id: string) => clients.find((c) => c.id === id)?.name || '—';
+  // Only active therapist/senior staff can be assigned (UI validation; the security boundary
+  // is that childAssigned() in rules requires isClinician — a non-clinician uid grants nothing).
+  const clinicianStaff = staff.filter((s) => (s.role === 'therapist' || s.role === 'senior') && s.active !== false);
 
-  // ── Child form ──
+  // ── Assignment (ADMIN-ONLY): writes assignedStaffUids via the dedicated admin path,
+  // never through the generic child save (which reception also uses). ──
+  const toggleAssign = async (uid: string) => {
+    if (!child?.id || !isAdmin || !uid) return;
+    const cur = child.assignedStaffUids || [];
+    const has = cur.includes(uid);
+    const next = has ? cur.filter((x) => x !== uid) : [...cur, uid];
+    try {
+      await setAssignedStaff(child.id, next);
+      await writeTmsAudit({ eventType: has ? 'clinician_unassigned' : 'clinician_assigned', targetType: 'child', targetId: child.id, actorRole: user?.role, metadata: { staffUid: uid } });
+      setChild({ ...child, assignedStaffUids: next }); await load();
+      flash(has ? 'Clinician unassigned.' : 'Clinician assigned.');
+    } catch { flash('Assignment update failed.'); }
+  };
+
+  // ── Child form (admin/reception only) ──
   const saveChildForm = async () => {
     if (!child) return;
+    if (!canEditChild) return;
     if (!child.name.trim()) return flash('Child name is required.');
-    try { const id = await saveChild(child); setChild({ ...child, id }); flash('Child saved.'); await load(); }
-    catch { flash('Save failed — deploy + sign in as admin.'); }
+    try {
+      const id = await saveChild(child);
+      // Audit an admin parent-ownership change on an existing child (controlled correction).
+      if (isAdmin && child.id && origParentId && child.parentId !== origParentId) {
+        await writeTmsAudit({ eventType: 'parent_ownership_changed', targetType: 'child', targetId: id, actorRole: user?.role, metadata: { from: origParentId, to: child.parentId } });
+      }
+      setChild({ ...child, id }); setOrigParentId(child.parentId || ''); flash('Child saved.'); await load();
+    } catch { flash('Save failed — deploy + sign in as admin.'); }
   };
   const removeChild = async () => {
     if (!child?.id) { setChild(null); return; }
-    try { await deleteChild(child.id); setChild(null); await load(); flash('Child removed.'); }
-    catch { flash('Delete failed.'); }
+    if (!isAdmin) return; // hard delete is TMS-Admin-only (pilot)
+    if (!window.confirm(`Permanently delete ${child.name}'s record? This cannot be undone.`)) return;
+    try {
+      await deleteChild(child.id);
+      await writeTmsAudit({ eventType: 'clinical_hard_delete', targetType: 'child', targetId: child.id, actorRole: user?.role });
+      setChild(null); await load(); flash('Child removed.');
+    } catch { flash('Delete failed.'); }
   };
   const toggleDiscipline = (d: string) => {
     if (!child) return;
@@ -51,6 +93,8 @@ export default function Clients() {
   };
   const removeClient = async () => {
     if (!client?.id) { setClient(null); return; }
+    if (!isAdmin) return; // parent-record delete is admin-only
+    if (!window.confirm(`Delete parent ${client.name}? This cannot be undone.`)) return;
     try { await deleteClient(client.id); setClient(null); await load(); flash('Parent removed.'); }
     catch { flash('Delete failed.'); }
   };
@@ -61,10 +105,10 @@ export default function Clients() {
 
       <div className="tabs-bar">
         <button className={'tab' + (tab === 'Children' ? ' active' : '')} onClick={() => { setTab('Children'); setChild(null); }}>Children</button>
-        <button className={'tab' + (tab === 'Parents' ? ' active' : '')} onClick={() => { setTab('Parents'); setClient(null); }}>Parents</button>
+        {!isClinician && <button className={'tab' + (tab === 'Parents' ? ' active' : '')} onClick={() => { setTab('Parents'); setClient(null); }}>Parents</button>}
         <span style={{ flex: 1 }} />
-        {tab === 'Children' && !child && <button className="btn-primary" onClick={() => setChild(blankChild())}>+ Add child</button>}
-        {tab === 'Parents' && !client && <button className="btn-primary" onClick={() => setClient(blankClient())}>+ Add parent</button>}
+        {tab === 'Children' && !child && canEditChild && <button className="btn-primary" onClick={() => { setChild(blankChild()); setOrigParentId(''); }}>+ Add child</button>}
+        {tab === 'Parents' && !client && canEditChild && <button className="btn-primary" onClick={() => setClient(blankClient())}>+ Add parent</button>}
         {msg && <span className="save-flash">{msg}</span>}
       </div>
 
@@ -83,7 +127,7 @@ export default function Clients() {
                     <td>{c.concern}</td>
                     <td>{c.disciplinesNeeded.map((d) => <span className="chip" key={d}>{d}</span>)}</td>
                     <td><span className={'pill ' + c.status.replace(/\s/g, '').toLowerCase()}>{c.status}</span></td>
-                    <td className="acts"><button className="mini save" onClick={() => setChild(c)}>Open</button></td>
+                    <td className="acts"><button className="mini save" onClick={() => openChild(c)}>Open</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -92,7 +136,23 @@ export default function Clients() {
         </div>
       )}
 
-      {tab === 'Children' && child && (
+      {tab === 'Children' && child && isClinician && (
+        <div className="card">
+          <div className="row-between"><h3>{child.name}</h3>
+            <button className="btn-ghost" onClick={() => setChild(null)}>← Back to list</button></div>
+          <p className="muted">Read-only — assigned clinician view. Open Goals / Assessments / Care Plans to work on this child's records.</p>
+          <div className="form-grid">
+            <div className="f"><span>Status</span><div><span className={'pill ' + child.status.replace(/\s/g, '').toLowerCase()}>{child.status}</span></div></div>
+            <div className="f"><span>Date of birth</span><div>{child.dob || '—'}</div></div>
+            <div className="f"><span>School</span><div>{child.school || '—'}</div></div>
+          </div>
+          <div className="f full"><span>Primary concern</span><div>{child.concern || '—'}</div></div>
+          <div className="f full"><span>Requirements</span><div>{child.requirementsNote || '—'}</div></div>
+          <div className="f full"><span>Needs</span><div>{child.disciplinesNeeded.map((d) => <span className="chip" key={d}>{d}</span>)}</div></div>
+        </div>
+      )}
+
+      {tab === 'Children' && child && canEditChild && (
         <div className="card">
           <div className="row-between"><h3>{child.id ? 'Edit child' : 'New child'}</h3>
             <button className="btn-ghost" onClick={() => setChild(null)}>← Back to list</button></div>
@@ -100,8 +160,8 @@ export default function Clients() {
             <label className="f"><span>Full name *</span><input value={child.name} onChange={(e) => setChild({ ...child, name: e.target.value })} /></label>
             <label className="f"><span>Date of birth</span><input type="date" value={child.dob} onChange={(e) => setChild({ ...child, dob: e.target.value })} /></label>
             <label className="f"><span>Gender</span><select value={child.gender} onChange={(e) => setChild({ ...child, gender: e.target.value })}><option>Male</option><option>Female</option><option>Other</option></select></label>
-            <label className="f"><span>Parent / guardian</span>
-              <select value={child.parentId} onChange={(e) => setChild({ ...child, parentId: e.target.value })}>
+            <label className="f"><span>Parent / guardian{!isAdmin && !!child.id ? ' (admin-only to change)' : ''}</span>
+              <select value={child.parentId} disabled={!isAdmin && !!child.id} onChange={(e) => setChild({ ...child, parentId: e.target.value })}>
                 <option value="">— link a parent —</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select></label>
@@ -133,9 +193,26 @@ export default function Clients() {
           )}
           <label className="f full"><span>Notes</span><textarea rows={2} value={child.notes} onChange={(e) => setChild({ ...child, notes: e.target.value })} /></label>
 
+          {/* ── Clinician assignment (ADMIN-ONLY) — controls which therapists can access this child ── */}
+          {isAdmin && (
+            <>
+              <h3 style={{ marginTop: 14 }}>Assigned clinicians <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>· controls which therapists can access this child's records</span></h3>
+              {!child.id && <p className="muted" style={{ fontSize: 12 }}>Save the child first, then assign clinicians.</p>}
+              {child.id && (
+                <div className="chip-pick">
+                  {clinicianStaff.length === 0 && <span className="muted" style={{ fontSize: 12 }}>No active therapist/senior staff to assign.</span>}
+                  {clinicianStaff.map((s) => {
+                    const on = (child.assignedStaffUids || []).includes(s.id || '');
+                    return <button key={s.id} type="button" className={'chip-btn' + (on ? ' on' : '')} onClick={() => toggleAssign(s.id || '')}>{on ? '✓ ' : ''}{s.name} <span className="muted">({s.role})</span></button>;
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
           <div className="row-between" style={{ marginTop: 16 }}>
             <button className="btn-primary" onClick={saveChildForm}>Save child</button>
-            <button className="mini del" onClick={removeChild}>{child.id ? 'Delete' : 'Discard'}</button>
+            {(!child.id || isAdmin) && <button className="mini del" onClick={removeChild}>{child.id ? 'Delete' : 'Discard'}</button>}
           </div>
         </div>
       )}
@@ -178,7 +255,7 @@ export default function Clients() {
           <label className="f full"><span>Notes</span><textarea rows={2} value={client.notes} onChange={(e) => setClient({ ...client, notes: e.target.value })} /></label>
           <div className="row-between" style={{ marginTop: 16 }}>
             <button className="btn-primary" onClick={saveClientForm}>Save parent</button>
-            <button className="mini del" onClick={removeClient}>{client.id ? 'Delete' : 'Discard'}</button>
+            {(!client.id || isAdmin) && <button className="mini del" onClick={removeClient}>{client.id ? 'Delete' : 'Discard'}</button>}
           </div>
         </div>
       )}

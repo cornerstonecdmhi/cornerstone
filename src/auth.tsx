@@ -4,7 +4,13 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { setSentryUser } from './instrument';
 
-export type Role = 'admin' | 'senior' | 'therapist' | 'parent';
+export type Role = 'admin' | 'senior' | 'therapist' | 'reception' | 'parent';
+
+/** Clinical staff who get ASSIGNED-child-only access (pilot ABAC clinician class). */
+export const CLINICIAN_ROLES: Role[] = ['therapist', 'senior'];
+export const isClinicianRole = (r?: Role | string) => r === 'therapist' || r === 'senior';
+export const isAdminRole = (r?: Role | string) => r === 'admin';
+export const isReceptionRole = (r?: Role | string) => r === 'reception';
 /** Which access surface this app instance serves. Each accepts ONLY its own members. */
 export type Audience = 'tms' | 'portal';
 
@@ -162,6 +168,7 @@ export function roleHome(role: Role): string {
   switch (role) {
     case 'therapist': return '/my-day';
     case 'senior': return '/clinical';
+    case 'reception': return '/front-desk';
     case 'parent': return '/portal';
     default: return '/today';
   }

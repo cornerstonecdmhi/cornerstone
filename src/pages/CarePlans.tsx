@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../auth';
 import {
-  listCarePlans, saveCarePlan, deleteCarePlan, listChildren, listClients, listTherapists,
+  saveCarePlan, deleteCarePlan, listClients, listTherapists,
   listServices, getSettings, saveChild, saveInvoice, saveChildPackage,
+  carePlansForUser, childrenForUser, writeTmsAudit,
 } from '../lib/data';
 import {
   type CarePlan, type CarePlanTherapy, type Child, type Client, type Therapist, type Service,
@@ -32,15 +33,17 @@ export default function CarePlans() {
   const [msg, setMsg] = useState('');
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 3500); };
 
-  const load = async () => { try { setList(await listCarePlans()); } catch { /* preview */ } };
+  // Clinicians (senior) see care plans only for their ASSIGNED children (child-anchored read).
+  const load = async () => { try { setList(await carePlansForUser(user)); } catch { /* preview */ } };
   useEffect(() => {
+    if (!user) return;
     load();
-    listChildren().then(setChildren).catch(() => {});
-    listClients().then(setClients).catch(() => {});
+    childrenForUser(user).then(setChildren).catch(() => {});
+    if (isAdmin) listClients().then(setClients).catch(() => {}); // parent contact = admin only
     listTherapists().then(setTherapists).catch(() => {});
     listServices().then(setServices).catch(() => {});
     getSettings().then((s) => setAssessorName(s.assessorName)).catch(() => {});
-  }, []);
+  }, [user]);
 
   // Fee for an assessment, from the priced catalog (Settings → Services).
   const feeFor = (label: string): number => {
@@ -82,8 +85,13 @@ export default function CarePlans() {
   };
   const remove = async () => {
     if (!p?.id) { setP(null); return; }
-    try { await deleteCarePlan(p.id); setP(null); await load(); flash('Removed.'); }
-    catch { flash('Delete failed.'); }
+    if (!isAdmin) return; // hard delete is TMS-Admin-only (pilot)
+    if (!window.confirm(`Permanently delete this care plan for ${p.childName}? This cannot be undone.`)) return;
+    try {
+      await deleteCarePlan(p.id);
+      await writeTmsAudit({ eventType: 'clinical_hard_delete', targetType: 'care_plan', targetId: p.id, actorRole: user?.role, metadata: { childId: p.childId } });
+      setP(null); await load(); flash('Removed.');
+    } catch { flash('Delete failed.'); }
   };
 
   // Bill the recommended assessment battery to the parent (one line per test).
@@ -104,6 +112,7 @@ export default function CarePlans() {
   // so scheduling/booking can proceed, and optionally seeds therapy packages.
   const activatePlan = async () => {
     if (!p) return;
+    if (!isAdmin) return; // activation MUTATES the child + seeds packages → admin-only
     if (!p.parentAgreed) return flash('Mark "parent agreed" before activating the plan.');
     const child = children.find((c) => c.id === p.childId);
     if (!child) return flash('Child not found.');
@@ -247,11 +256,15 @@ export default function CarePlans() {
           <label className="f full"><span>Notes</span><textarea rows={2} value={p.notes} onChange={(e) => setP({ ...p, notes: e.target.value })} /></label>
 
           <div className="row-between" style={{ marginTop: 16 }}>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn-primary" onClick={save}>Save</button>
-              <button className="btn-ghost" onClick={activatePlan} disabled={!p.parentAgreed} title={p.parentAgreed ? 'Drive the child record + seed packages' : 'Mark parent agreed first'}>Activate plan</button>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {isAdmin ? (
+                <>
+                  <button className="btn-primary" onClick={save}>Save</button>
+                  <button className="btn-ghost" onClick={activatePlan} disabled={!p.parentAgreed} title={p.parentAgreed ? 'Drive the child record + seed packages' : 'Mark parent agreed first'}>Activate plan</button>
+                </>
+              ) : <span className="muted" style={{ fontSize: 12 }}>Read-only — care-plan authoring &amp; activation are handled by the lead assessor.</span>}
             </div>
-            <button className="mini del" onClick={remove}>{p.id ? 'Delete' : 'Discard'}</button>
+            {(!p.id || isAdmin) && <button className="mini del" onClick={remove}>{p.id ? 'Delete' : 'Discard'}</button>}
           </div>
         </div>
       )}

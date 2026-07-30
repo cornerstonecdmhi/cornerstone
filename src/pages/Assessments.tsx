@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../auth';
 import {
-  listAssessments, saveAssessment, deleteAssessment, listChildren, listTherapists,
+  saveAssessment, deleteAssessment, listTherapists,
   saveChild, getSettings, listServices, saveInvoice, listClients,
+  assessmentsForUser, childrenForUser, writeTmsAudit,
 } from '../lib/data';
 import {
   type Assessment, type Child, type Client, type Therapist, type Service, type AssessToolScore,
@@ -52,15 +53,19 @@ export default function Assessments() {
       .filter((g) => g.points.length >= 2);
   }, [list]);
 
-  const load = async () => { try { setList(await listAssessments()); } catch { /* preview */ } };
+  // Clinicians (senior) see assessments only for their ASSIGNED children (child-anchored read).
+  const load = async () => { try { setList(await assessmentsForUser(user)); } catch { /* preview */ } };
   useEffect(() => {
+    if (!user) return;
     load();
-    listChildren().then(setChildren).catch(() => {});
-    listClients().then(setClients).catch(() => {});
+    childrenForUser(user).then(setChildren).catch(() => {});
+    // Parent contact details (tms_clients) are loaded ONLY for admins (invoice bill-to).
+    // Clinicians must not pull parent contact information.
+    if (isAdmin) listClients().then(setClients).catch(() => {});
     listTherapists().then(setTherapists).catch(() => {});
     listServices().then(setServices).catch(() => {});
     getSettings().then((s) => { setAssessorName(s.assessorName); setAssessorCred(s.assessorCredential); }).catch(() => {});
-  }, []);
+  }, [user]);
 
   // Each assessment carries its own fee, looked up from the priced catalog (Settings → Services).
   const feeFor = (label: string): number => {
@@ -115,9 +120,11 @@ export default function Assessments() {
     try {
       const id = await saveAssessment(a);
       // Completing an assessment clears the booking gate; assigning the care team
-      // onboards the child → Active and sets the case manager.
+      // onboards the child → Active and sets the case manager. This MUTATES the child
+      // document, so it is ADMIN-ONLY (clinicians must never write tms_children — the
+      // Stage-3 rules enforce this; we gate the UI path here too).
       const child = children.find((c) => c.id === a.childId);
-      if (child) {
+      if (isAdmin && child) {
         const patch: Partial<Child> = {};
         if (a.status === 'Completed') patch.assessmentDone = true;
         if (a.assignedTeam.length) {
@@ -136,8 +143,13 @@ export default function Assessments() {
   };
   const remove = async () => {
     if (!a?.id) { setA(null); return; }
-    try { await deleteAssessment(a.id); setA(null); await load(); flash('Removed.'); }
-    catch { flash('Delete failed.'); }
+    if (!isAdmin) return; // hard delete is TMS-Admin-only (pilot)
+    if (!window.confirm(`Permanently delete this assessment for ${a.childName}? This cannot be undone.`)) return;
+    try {
+      await deleteAssessment(a.id);
+      await writeTmsAudit({ eventType: 'clinical_hard_delete', targetType: 'assessment', targetId: a.id, actorRole: user?.role, metadata: { childId: a.childId } });
+      setA(null); await load(); flash('Removed.');
+    } catch { flash('Delete failed.'); }
   };
 
   return (
@@ -295,8 +307,8 @@ export default function Assessments() {
           )}
 
           <div className="row-between" style={{ marginTop: 16 }}>
-            <button className="btn-primary" onClick={save}>Save{a.assignedTeam.length ? ' & assign' : ''}</button>
-            <button className="mini del" onClick={remove}>{a.id ? 'Delete' : 'Discard'}</button>
+            <button className="btn-primary" onClick={save}>Save{isAdmin && a.assignedTeam.length ? ' & assign' : ''}</button>
+            {(!a.id || isAdmin) && <button className="mini del" onClick={remove}>{a.id ? 'Delete' : 'Discard'}</button>}
           </div>
         </div>
       )}

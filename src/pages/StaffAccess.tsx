@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   listAccessRequests, approveAccess, denyAccess, listStaff, saveStaff, deleteStaff,
   listInvites, inviteStaff, deleteInvite,
-  listParentInvites, inviteParent, deleteParentInvite, listClients,
+  listParentInvites, inviteParent, deleteParentInvite, listClients, writeTmsAudit,
 } from '../lib/data';
 import { type AccessRequest, type StaffMember, type Invite, type ParentInvite, type Client, STAFF_ROLES } from '../lib/types';
 import { useAuth } from '../auth';
@@ -61,18 +61,38 @@ export default function StaffAccess() {
     try { if (i.id) await deleteInvite(i.id); flash('Invite revoked.'); await load(); } catch { flash('Failed.'); }
   };
 
-  // ── Staff roster management ──
+  // ── Staff roster management (admin-only; audited) ──
   const setRole = async (s: StaffMember, role: Role) => {
-    try { await saveStaff({ ...s, role }); await load(); } catch { flash('Save failed.'); }
+    if (s.role === role) return;
+    const activeAdmins = staff.filter((x) => x.role === 'admin' && x.active !== false);
+    if (s.role === 'admin' && role !== 'admin' && activeAdmins.length <= 1) { flash("Can't demote the last admin."); return; }
+    try {
+      await saveStaff({ ...s, role });
+      await writeTmsAudit({ eventType: 'staff_role_changed', targetType: 'staff', targetId: s.id || '', actorRole: user?.role, metadata: { from: s.role, to: role } });
+      await load();
+    } catch { flash('Save failed.'); }
   };
   const toggleActive = async (s: StaffMember) => {
-    try { await saveStaff({ ...s, active: !(s.active !== false) }); flash(`${s.name} ${s.active !== false ? 'disabled' : 'enabled'}.`); await load(); } catch { flash('Failed.'); }
+    const willDisable = s.active !== false;
+    const activeAdmins = staff.filter((x) => x.role === 'admin' && x.active !== false);
+    if (willDisable && s.role === 'admin' && activeAdmins.length <= 1) { flash("Can't disable the last admin."); return; }
+    try {
+      await saveStaff({ ...s, active: !willDisable });
+      await writeTmsAudit({ eventType: 'staff_active_changed', targetType: 'staff', targetId: s.id || '', actorRole: user?.role, metadata: { active: !willDisable } });
+      flash(`${s.name} ${willDisable ? 'disabled' : 'enabled'}.`); await load();
+    } catch { flash('Failed.'); }
   };
   const remove = async (s: StaffMember) => {
     const admins = staff.filter((x) => x.role === 'admin' && x.active !== false);
     if (s.role === 'admin' && admins.length <= 1) { flash("Can't remove the last admin."); return; }
     if (s.id === user?.uid && !window.confirm('This removes YOUR OWN access. Continue?')) return;
-    try { if (s.id) await deleteStaff(s.id); await load(); flash('Removed.'); } catch { flash('Failed.'); }
+    try {
+      if (s.id) {
+        await deleteStaff(s.id);
+        await writeTmsAudit({ eventType: 'staff_active_changed', targetType: 'staff', targetId: s.id, actorRole: user?.role, metadata: { removed: true } });
+      }
+      await load(); flash('Removed.');
+    } catch { flash('Failed.'); }
   };
 
   // ── Parent portal invites ──

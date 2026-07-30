@@ -1,7 +1,8 @@
 import {
   doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, orderBy, limit, where,
+  addDoc, serverTimestamp,
 } from 'firebase/firestore';
-import { db, DEMO, callSaveInvoice, callDeleteInvoice, callSendNotification } from '../firebase';
+import { db, auth, DEMO, callSaveInvoice, callDeleteInvoice, callSendNotification } from '../firebase';
 import {
   type ClinicSettings, type Service, type Package, type Holiday, type WorkHour,
   type Client, type Child, type Therapist, type Appointment, type AttendanceRecord, type ChildPackage,
@@ -35,11 +36,26 @@ async function listCol<T>(name: string, orderField?: string): Promise<T[]> {
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as T[];
 }
+// Collections that carry forward-looking authorship/audit metadata (security gate §7/§19).
+// Others (leads/services/packages/…) keep their own field semantics untouched.
+const AUTHORED_COLLECTIONS = new Set([
+  'tms_children', 'tms_appointments', 'tms_assessments', 'tms_goals', 'tms_care_plans',
+]);
+
 async function saveDocIn<T extends { id?: string }>(name: string, item: T): Promise<string> {
   if (DEMO) return demo.save(name, item);
+  const isCreate = !item.id;
   const ref = item.id ? doc(db, name, item.id) : doc(collection(db, name));
-  const { id, ...rest } = item;
-  void id;
+  const rest = { ...(item as Record<string, unknown>) };
+  delete rest.id;
+  if (AUTHORED_COLLECTIONS.has(name)) {
+    const uid = auth.currentUser?.uid || '';
+    // NEVER trust UI-supplied creator metadata: strip it, then set createdBy* only on create.
+    // updatedBy*/updatedAt stamped on every write. merge:true preserves createdBy* on update.
+    delete rest.createdByUid; delete rest.createdAt;
+    rest.updatedByUid = uid; rest.updatedAt = serverTimestamp();
+    if (isCreate) { rest.createdByUid = uid; rest.createdAt = serverTimestamp(); }
+  }
   await setDoc(ref, rest, { merge: true });
   return ref.id;
 }
@@ -84,6 +100,71 @@ export async function listChildrenForParent(clientId: string): Promise<Child[]> 
   if (DEMO) return (demo.list('tms_children') as Child[]).filter((c) => c.parentId === clientId);
   const snap = await getDocs(query(collection(db, 'tms_children'), where('parentId', '==', clientId)));
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as Child[];
+}
+
+// ─── PILOT ABAC: assignment projection + role-scoped reads ────────────────────
+// Clinicians (therapist/senior) may read ONLY their assigned children and those children's
+// clinical records. These helpers produce the exact rule-authorizable query shapes the
+// Stage-3 restrictive rules will require — NEVER a global read + client-side filter.
+type ScopeUser = { uid: string; role: string } | null | undefined;
+const scopeIsClinician = (r?: string) => r === 'therapist' || r === 'senior';
+
+/** Children a clinician is assigned to (rule-facing `array-contains` query). */
+export async function listChildrenForStaff(uid: string): Promise<Child[]> {
+  if (DEMO) return (demo.list('tms_children') as Child[]).filter((c) => (c.assignedStaffUids || []).includes(uid));
+  const snap = await getDocs(query(collection(db, 'tms_children'), where('assignedStaffUids', 'array-contains', uid)));
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) })) as Child[];
+}
+
+/** Role-scoped child list: clinicians see ONLY assigned children; admin/reception see all. */
+export async function childrenForUser(user: ScopeUser): Promise<Child[]> {
+  if (!user) return [];
+  return scopeIsClinician(user.role) ? listChildrenForStaff(user.uid) : listChildren();
+}
+
+/** ADMIN-ONLY assignment membership write (UI-gated in Stage 1; rules-gated in Stage 3). */
+export async function setAssignedStaff(childId: string, staffUids: string[]): Promise<void> {
+  if (DEMO) { const c = (demo.list('tms_children') as Child[]).find((x) => x.id === childId); if (c) c.assignedStaffUids = staffUids; return; }
+  await setDoc(doc(db, 'tms_children', childId), {
+    assignedStaffUids: staffUids, updatedByUid: auth.currentUser?.uid || '', updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
+/** Clinical records for the current user — child-anchored for clinicians (never a global read). */
+async function forUserByChild<T>(user: ScopeUser, globalList: () => Promise<T[]>, perChild: (childId: string) => Promise<T[]>): Promise<T[]> {
+  if (!user) return [];
+  if (!scopeIsClinician(user.role)) return globalList();
+  const kids = await listChildrenForStaff(user.uid);
+  const out: T[] = [];
+  for (const k of kids) if (k.id) out.push(...(await perChild(k.id)));
+  return out;
+}
+export const goalsForUser = (u: ScopeUser) => forUserByChild<Goal>(u, listGoals, listGoalsForChild);
+export const assessmentsForUser = (u: ScopeUser) => forUserByChild<Assessment>(u, listAssessments, listAssessmentsForChild);
+export const carePlansForUser = (u: ScopeUser) => forUserByChild<CarePlan>(u, listCarePlans, listCarePlansForChild);
+
+/** Appointments on a date, scoped: clinicians get only their assigned children's; others global. */
+export async function appointmentsForUserOnDate(user: ScopeUser, date: string): Promise<Appointment[]> {
+  if (!user) return [];
+  if (!scopeIsClinician(user.role)) return listAppointments(date);
+  const kids = await listChildrenForStaff(user.uid);
+  const out: Appointment[] = [];
+  for (const k of kids) if (k.id) out.push(...(await listAppointmentsForChild(k.id)).filter((a) => a.date === date));
+  return out.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+}
+
+/** Best-effort, tamper-resistant pilot audit (tms_audit_client). NEVER blocks the primary op,
+ *  NEVER carries clinical notes/diagnosis/PII — pass only safe ids/labels in `metadata`. */
+export async function writeTmsAudit(e: { eventType: string; targetType: string; targetId: string; actorRole?: string; metadata?: Record<string, string | number | boolean | null> }): Promise<void> {
+  if (DEMO) return;
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+  try {
+    await addDoc(collection(db, 'tms_audit_client'), {
+      eventType: e.eventType, actorUid: uid, actorRole: e.actorRole || '',
+      targetType: e.targetType, targetId: e.targetId, metadata: e.metadata || {}, at: serverTimestamp(),
+    });
+  } catch { /* best-effort: a failed audit write must never break the clinical/admin operation */ }
 }
 
 export const listTherapists = () => listCol<Therapist>('tms_therapists', 'name');

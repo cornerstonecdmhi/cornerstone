@@ -134,7 +134,14 @@ export interface Child {
   concern: string;            // primary concern / diagnosis
   disciplinesNeeded: string[]; // requirement → drives capacity planning
   requirementsNote: string;    // e.g. "Speech 3x/week, OT 2x/week"
-  assignedTherapists: string;  // therapist IDs (wired when Therapists module lands)
+  assignedTherapists: string;  // LEGACY display string (roster ids/names) — NOT used for auth
+  /**
+   * Rule-facing authorization projection (pilot ABAC). Set of Firebase Auth UIDs
+   * (tms_staff doc ids) of the clinicians assigned to this child. ADMIN-WRITE-ONLY;
+   * clinicians must never write this. Missing/empty ⇒ no clinician access (fail-closed).
+   * Populated in Stage 2; do NOT infer from `assignedTherapists`.
+   */
+  assignedStaffUids?: string[];
   caseManager: string;
   startDate: string;
   status: string;             // In Assessment / Active / On Hold / Discharged / Graduated
@@ -147,6 +154,8 @@ export interface Child {
   nextReassessDate?: string;    // formal re-assessment due
   assessmentDone?: boolean;     // gate: has a completed assessment + assigned team
   dischargeNote?: string;       // set by Rajkumar on graduation/discharge
+  // Authorship/audit metadata (forward-looking; legacy records omit these — never inferred).
+  createdByUid?: string; createdAt?: unknown; updatedByUid?: string; updatedAt?: unknown;
 }
 
 export const CHILD_STATUS = ['In Assessment', 'Active', 'On Hold', 'Discharged', 'Graduated'];
@@ -197,6 +206,7 @@ export interface Appointment {
   notes: string;
   creditConsumed?: boolean; // guard against double-decrementing a package credit
   source?: string;     // 'website' for online self-bookings awaiting confirmation
+  createdByUid?: string; createdAt?: unknown; updatedByUid?: string; updatedAt?: unknown;
 }
 
 export interface ChildPackage {
@@ -227,6 +237,7 @@ export interface Goal {
   therapist: string;
   setDate: string;
   reviewDate: string;
+  createdByUid?: string; createdAt?: unknown; updatedByUid?: string; updatedAt?: unknown;
 }
 export const GOAL_STATUS = ['Active', 'Achieved', 'Revised', 'On Hold'];
 export const GAS_LABELS: Record<number, string> = {
@@ -304,6 +315,7 @@ export interface Assessment {
   assignedTeam: { discipline: string; therapist: string }[];
   status: string;              // Scheduled / Completed
   sharedWithParent?: boolean;  // when true, the parent can view this report in their portal
+  createdByUid?: string; createdAt?: unknown; updatedByUid?: string; updatedAt?: unknown;
 }
 export const ASSESSMENT_STATUS = ['Scheduled', 'Completed'];
 // The actual battery Cornerstone/Rajkumar administers (standardized, norm-referenced tools).
@@ -386,6 +398,7 @@ export interface CarePlan {
   agreedDate: string;
   status: string;                   // Proposed / Agreed / Active / Completed / Cancelled
   notes: string;
+  createdByUid?: string; createdAt?: unknown; updatedByUid?: string; updatedAt?: unknown;
 }
 export const CAREPLAN_STATUS = ['Proposed', 'Agreed', 'Active', 'Completed', 'Cancelled'];
 // Plan types are listed for selection; the recurring/combo PRICING rules are
@@ -400,7 +413,7 @@ export interface StaffMember {
   id?: string;          // == Firebase Auth uid
   name: string;
   email?: string;
-  role: 'admin' | 'senior' | 'therapist';
+  role: 'admin' | 'senior' | 'therapist' | 'reception';
   active: boolean;
 }
 export interface AccessRequest {
@@ -416,12 +429,26 @@ export interface AccessRequest {
 export interface Invite {
   id?: string;          // == lowercased email
   email: string;
-  role: 'admin' | 'senior' | 'therapist';
+  role: 'admin' | 'senior' | 'therapist' | 'reception';
   invitedBy?: string;
   createdAt: number;
   status: 'invited' | 'accepted';
 }
-export const STAFF_ROLES = ['admin', 'senior', 'therapist'] as const;
+export const STAFF_ROLES = ['admin', 'senior', 'therapist', 'reception'] as const;
+
+// ── Client-written pilot audit (tamper-resistant, best-effort) ──────────────────
+// Separate from tms_audit_logs (Functions-only). See writeTmsAudit() in lib/data.
+// Records only safe ids/labels — NEVER clinical notes, diagnosis, or PII.
+export interface TmsAuditEvent {
+  id?: string;
+  eventType: string;    // 'clinician_assigned' | 'clinician_unassigned' | 'staff_role_changed' | 'staff_active_changed' | 'clinical_hard_delete' | 'parent_ownership_changed'
+  actorUid: string;
+  actorRole?: string;
+  targetType: string;   // 'child' | 'staff' | 'assessment' | 'goal' | 'care_plan' | 'appointment'
+  targetId: string;
+  metadata?: Record<string, string | number | boolean | null>;
+  at?: unknown;         // serverTimestamp
+}
 
 // Parent portal invite — staff invite a guardian (by email) linked to their client
 // record; the parent is auto-provisioned as a tms_parent_users on first sign-in and

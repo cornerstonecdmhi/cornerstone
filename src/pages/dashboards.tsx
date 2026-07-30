@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../auth';
-import { listAppointments, listChildren, listLeads } from '../lib/data';
+import { listAppointments, listLeads, appointmentsForUserOnDate, childrenForUser } from '../lib/data';
 import type { Appointment, Child, Lead } from '../lib/types';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -58,15 +58,40 @@ export function Today() {
   );
 }
 
+export function FrontDesk() {
+  const { user } = useAuth();
+  const appts = useToday();
+  const [leads, setLeads] = useState<Lead[]>([]);
+  useEffect(() => { listLeads().then(setLeads).catch(() => {}); }, []);
+  const scheduled = appts.filter((a) => a.status === 'Scheduled').length;
+  const requested = appts.filter((a) => a.status === 'Requested').length;
+  const newLeads = leads.filter((l) => l.status === 'New').length;
+  return (
+    <>
+      <PageHead title={`Front desk — ${user?.name?.split(' ')[0] || 'Reception'}`} sub="Scheduling and intake overview. Operational view — no clinical records." />
+      <div className="kpi-row">
+        <Kpi label="Sessions today" value={appts.length} />
+        <Kpi label="Upcoming today" value={scheduled} tone="teal" />
+        <Kpi label="To confirm" value={requested} tone={requested ? 'amber' : undefined} />
+        <Kpi label="New leads — call now" value={newLeads} tone={newLeads ? 'red' : undefined} />
+      </div>
+      <div className="card"><h3>Today's schedule</h3><ApptTable rows={appts} /></div>
+    </>
+  );
+}
+
 export function MyDay() {
   const { user } = useAuth();
-  const all = useToday();
-  const mine = all.filter((a) => a.therapistName === user?.name);
-  const rows = mine.length ? mine : all; // demo/admin sees all
+  // Assigned-only: derived from the therapist's assigned children (never a clinic-wide read).
+  const [rows, setRows] = useState<Appointment[]>([]);
+  useEffect(() => {
+    if (!user) return;
+    appointmentsForUserOnDate(user, today()).then(setRows).catch(() => setRows([]));
+  }, [user]);
   const done = rows.filter((a) => a.status === 'Attended').length;
   return (
     <>
-      <PageHead title="My Day" sub={`${user?.name || 'Therapist'} — your sessions and plan for today.`} />
+      <PageHead title="My Day" sub={`${user?.name || 'Therapist'} — sessions for your assigned children today.`} />
       <div className="kpi-row">
         <Kpi label="Sessions today" value={rows.length} />
         <Kpi label="Completed" value={done} tone="teal" />
@@ -78,8 +103,10 @@ export function MyDay() {
 }
 
 export function Clinical() {
+  const { user } = useAuth();
   const [children, setChildren] = useState<Child[]>([]);
-  useEffect(() => { listChildren().then(setChildren).catch(() => setChildren([])); }, []);
+  // Assigned-only caseload for senior clinicians (never a clinic-wide read).
+  useEffect(() => { if (user) childrenForUser(user).then(setChildren).catch(() => setChildren([])); }, [user]);
   const active = children.filter((c) => c.status === 'Active').length;
   const assessing = children.filter((c) => c.status === 'In Assessment').length;
   const t = today();

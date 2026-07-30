@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { listGoals, saveGoal, deleteGoal, listChildren } from '../lib/data';
+import { useAuth } from '../auth';
+import { saveGoal, deleteGoal, goalsForUser, childrenForUser, writeTmsAudit } from '../lib/data';
 import { type Goal, type Child, DISCIPLINES, GOAL_STATUS, GAS_LABELS, ICF_DOMAINS } from '../lib/types';
 
 const SCORES = [-2, -1, 0, 1, 2];
@@ -10,14 +11,17 @@ const blank = (): Goal => ({
 });
 
 export default function Goals() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [list, setList] = useState<Goal[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
   const [g, setG] = useState<Goal | null>(null);
   const [msg, setMsg] = useState('');
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 3000); };
 
-  const load = async () => { try { setList(await listGoals()); } catch { /* preview */ } };
-  useEffect(() => { load(); listChildren().then(setChildren).catch(() => {}); }, []);
+  // Clinicians see goals only for their ASSIGNED children (child-anchored, not a global read).
+  const load = async () => { try { setList(await goalsForUser(user)); } catch { /* preview */ } };
+  useEffect(() => { if (user) { load(); childrenForUser(user).then(setChildren).catch(() => {}); } }, [user]);
 
   const setScore = (score: number) => {
     if (!g) return;
@@ -35,8 +39,13 @@ export default function Goals() {
   };
   const remove = async () => {
     if (!g?.id) { setG(null); return; }
-    try { await deleteGoal(g.id); setG(null); await load(); flash('Removed.'); }
-    catch { flash('Delete failed.'); }
+    if (!isAdmin) return; // hard delete is TMS-Admin-only (pilot); clinicians use status fields
+    if (!window.confirm(`Permanently delete this goal for ${g.childName}? This cannot be undone.`)) return;
+    try {
+      await deleteGoal(g.id);
+      await writeTmsAudit({ eventType: 'clinical_hard_delete', targetType: 'goal', targetId: g.id, actorRole: user?.role, metadata: { childId: g.childId } });
+      setG(null); await load(); flash('Removed.');
+    } catch { flash('Delete failed.'); }
   };
 
   return (
@@ -103,7 +112,7 @@ export default function Goals() {
 
           <div className="row-between" style={{ marginTop: 16 }}>
             <button className="btn-primary" onClick={save}>Save goal</button>
-            <button className="mini del" onClick={remove}>{g.id ? 'Delete' : 'Discard'}</button>
+            {(!g.id || isAdmin) && <button className="mini del" onClick={remove}>{g.id ? 'Delete' : 'Discard'}</button>}
           </div>
         </div>
       )}
