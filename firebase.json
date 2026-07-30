@@ -1,7 +1,7 @@
 {
   "//": "Hosting ONLY for the TMS + Parent Portal frontends (same dist, two entries).",
   "//deploy": "Functions + Firestore rules live in ../cornerstone-clinic and deploy from there.",
-  "//cache": "Hashed /assets are immutable (safe to cache forever); HTML is no-cache so a new deploy is picked up on the next load — critical during the bug-fix pilot.",
+  "//cache": "Catch-all no-cache (revalidate every load so deploys/bug-fixes reach users immediately, incl. SPA routes like / and /patients that a **/*.html glob does NOT match) MUST stay listed BEFORE the immutable /assets rule: Firebase applies the LAST matching header on overlap, so the immutable rule wins for hashed js/css. Verify live before relying on it.",
   "hosting": [
     {
       "target": "tms",
@@ -9,8 +9,8 @@
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
       "rewrites": [{ "source": "**", "destination": "/index.html" }],
       "headers": [
-        { "source": "**/*.@(js|css|png|jpg|jpeg|gif|svg|webp|woff2)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
-        { "source": "**/*.html", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+        { "source": "**", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+        { "source": "**/*.@(js|css|png|jpg|jpeg|gif|svg|webp|woff2)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] }
       ]
     },
     {
@@ -19,8 +19,8 @@
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
       "rewrites": [{ "source": "**", "destination": "/index.html" }],
       "headers": [
-        { "source": "**/*.@(js|css|png|jpg|jpeg|gif|svg|webp|woff2)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
-        { "source": "**/*.html", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+        { "source": "**", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+        { "source": "**/*.@(js|css|png|jpg|jpeg|gif|svg|webp|woff2)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] }
       ]
     }
   ]
